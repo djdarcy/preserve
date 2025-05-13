@@ -1,0 +1,15 @@
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence,
+#  will be requested for review when someone opens a pull request.
+*       @
+
+# Core implementation
+*.js    @
+*.py    @
+
+# Documentation
+/docs/   @
+*.md     @
+
+# GitHub CI/CD
+/.github/ @

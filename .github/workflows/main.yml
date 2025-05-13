@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up python
+      run: echo "Setting up python environment"
+      
+    - name: Run tests
+      run: |
+        echo "Running tests for preserve"
+        # Add testing commands here
+    
+    - name: Build
+      run: |
+        echo "Building preserve"
+        # Add build commands here
