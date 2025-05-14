@@ -58,13 +58,34 @@ def restore_file_to_original(
     original = Path(original_path)
     
     # Check if current path exists
+    logger.debug(f"[DEBUG] Restore: Checking if current file exists: {current}")
     if not current.exists():
-        logger.error(f"Current file does not exist: {current}")
-        return False
+        logger.error(f"[DEBUG] Restore: Current file does not exist: {current}")
+        # Try to see if file exists with alternate path formats
+        alternate_path = None
+        # Try looking for just the filename in the same directory
+        try:
+            parent_dir = current.parent
+            if parent_dir.exists():
+                # Look for any file with the same name in the parent directory
+                filename = current.name
+                matching_files = list(parent_dir.glob(filename))
+                if matching_files:
+                    alternate_path = matching_files[0]
+                    logger.info(f"[DEBUG] Restore: Found alternate file with same name: {alternate_path}")
+        except Exception as alt_error:
+            logger.debug(f"[DEBUG] Restore: Error looking for alternate file: {alt_error}")
+        
+        if alternate_path and alternate_path.exists():
+            logger.info(f"[DEBUG] Restore: Using alternate file: {alternate_path}")
+            current = alternate_path
+        else:
+            return False
     
     # Check if original path exists and overwrite is not enabled
+    logger.debug(f"[DEBUG] Restore: Checking if original path exists: {original}, overwrite={overwrite}")
     if original.exists() and not overwrite:
-        logger.warning(f"Original path exists and overwrite is disabled: {original}")
+        logger.warning(f"[DEBUG] Restore: Original path exists and overwrite is disabled: {original}")
         return False
     
     try:

@@ -22,7 +22,19 @@ try:
     HAVE_DAZZLELINK = True
     logger.debug("Dazzlelink library found, integration enabled")
 except ImportError:
-    logger.debug("Dazzlelink library not found, integration disabled")
+    # Try with the bundled version
+    try:
+        import sys
+        from pathlib import Path
+        # Look for bundled dazzlelink in parent directory of preservelib
+        bundled_path = Path(__file__).parent.parent.parent / 'dazzlelink'
+        if bundled_path.exists() and str(bundled_path) not in sys.path:
+            sys.path.insert(0, str(bundled_path))
+        import dazzlelink
+        HAVE_DAZZLELINK = True
+        logger.debug("Bundled dazzlelink library found, integration enabled")
+    except ImportError:
+        logger.debug("Dazzlelink library not found, integration disabled")
 
 def is_available() -> bool:
     """

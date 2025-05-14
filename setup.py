@@ -11,7 +11,7 @@ with open(os.path.join(os.path.dirname(__file__), 'README.md'), encoding='utf-8'
 
 setup(
     name="preserve",
-    version="0.1.0",
+    version="0.2.1",
     description="A tool for preserving files with path normalization and verification",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -24,7 +24,7 @@ setup(
         "pathlib",
     ],
     extras_require={
-        "dazzlelink": ["dazzlelink>=0.1.0"],
+        "dazzlelink": ["dazzlelink>=0.5.0"],
         "windows": ["pywin32"],
         "dev": [
             "pytest",
@@ -32,6 +32,7 @@ setup(
             "black",
             "flake8",
         ],
+        "all": ["dazzlelink>=0.5.0", "pywin32;platform_system=='Windows'"]
     },
     classifiers=[
         "Development Status :: 3 - Alpha",

@@ -123,8 +123,11 @@ class PreserveManifest:
             # Update updated_at timestamp
             self.manifest["updated_at"] = datetime.datetime.now().isoformat()
             
+            # Convert all Path objects to strings
+            manifest_copy = self._prepare_manifest_for_serialization()
+            
             with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.manifest, f, indent=2)
+                json.dump(manifest_copy, f, indent=2)
             
             logger.debug(f"Saved manifest to {path}")
             return True
@@ -132,6 +135,25 @@ class PreserveManifest:
         except Exception as e:
             logger.error(f"Error saving manifest: {e}")
             return False
+            
+    def _prepare_manifest_for_serialization(self) -> Dict[str, Any]:
+        """
+        Create a serializable copy of the manifest.
+        
+        Returns:
+            A JSON-serializable copy of the manifest
+        """
+        def convert_paths_to_strings(obj):
+            if isinstance(obj, Path):
+                return str(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_paths_to_strings(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_paths_to_strings(item) for item in obj]
+            else:
+                return obj
+                
+        return convert_paths_to_strings(self.manifest)
     
     def add_operation(self, operation_type: str, source_path: Optional[str] = None, 
                      destination_path: Optional[str] = None, options: Optional[Dict[str, Any]] = None,

@@ -10,17 +10,11 @@ import sys
 import logging
 from pathlib import Path
 
-# Setup package-level logging
+# Setup package-level logger (without handlers - will be configured by preserve.py)
+# Note: This is only used when the package is imported directly, not through preserve.py
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-# Create console handler if not already present
-if not logger.handlers:
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    )
-    logger.addHandler(console_handler)
+# propagate=True by default, so we don't need to set it explicitly
 
 # Import core functionality
 from .manifest import (
@@ -50,38 +44,50 @@ from .restore import (
     find_restoreable_files
 )
 
-__version__ = '0.1.0'
+__version__ = '0.2.1'
 
 def configure_logging(level=logging.INFO, log_file=None):
     """
     Configure logging for preservelib.
     
+    This is primarily for standalone usage of preservelib (when not imported by preserve.py).
+    When used with preserve.py, logging will be configured there.
+    
     Args:
         level: Logging level
         log_file: Optional path to log file
     """
-    logger.setLevel(level)
+    # Set up a standard format for all handlers
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(log_format)
     
-    # Clear existing handlers
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
+    # Configure the root logger (to handle all propagated messages)
+    root_logger = logging.getLogger()
     
-    # Add console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    )
-    logger.addHandler(console_handler)
-    
-    # Add file handler if specified
-    if log_file:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(
-            logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        )
-        logger.addHandler(file_handler)
+    # Only configure if not already configured
+    if not root_logger.handlers:
+        root_logger.setLevel(level)
         
-    logger.debug(f"Logging configured with level {level}")
+        # Add console handler to root logger
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(level)
+        root_logger.addHandler(console_handler)
+        
+        # Add file handler to root logger if specified
+        if log_file:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(level)
+            root_logger.addHandler(file_handler)
+    
+    # Set the level on the preservelib and submodule loggers
+    for module_name in [__name__, 'preservelib.operations', 'preservelib.dazzlelink']:
+        module_logger = logging.getLogger(module_name)
+        module_logger.setLevel(level)
+        # Keep propagate=True to avoid duplicate logging
+    
+    logger.debug(f"Logging configured for preservelib with level {level}")
 
 def enable_verbose_logging():
     """Enable verbose (debug) logging."""

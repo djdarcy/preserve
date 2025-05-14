@@ -67,17 +67,30 @@ from preservelib import operations, manifest, metadata, restore
 
 # Check for dazzlelink integration
 try:
-    from preservelib import dazzlelink
-    HAVE_DAZZLELINK = dazzlelink.is_available()
+    import dazzlelink
+    from preservelib import dazzlelink as preserve_dazzlelink
+    HAVE_DAZZLELINK = preserve_dazzlelink.is_available()
 except ImportError:
-    HAVE_DAZZLELINK = False
+    # First try the bundled version if the pip-installed one is not available
+    try:
+        # Look for the bundled dazzlelink package
+        import sys
+        from pathlib import Path
+        bundled_path = Path(__file__).parent.parent / 'dazzlelink'
+        if bundled_path.exists() and str(bundled_path) not in sys.path:
+            sys.path.insert(0, str(bundled_path))
+        import dazzlelink
+        from preservelib import dazzlelink as preserve_dazzlelink
+        HAVE_DAZZLELINK = preserve_dazzlelink.is_available()
+    except ImportError:
+        HAVE_DAZZLELINK = False
 
 # Import filetoolkit package
 import filetoolkit
 from filetoolkit import paths, operations as file_ops, verification
 
 # Version information
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 def setup_logging(args):
     """Set up logging based on verbosity level"""
@@ -87,20 +100,44 @@ def setup_logging(args):
     elif args.quiet:
         log_level = logging.WARNING
     
-    # Configure root logger
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Get the root logger
+    root_logger = logging.getLogger()
     
-    # Get logger for this module
-    logger = logging.getLogger('preserve')
+    # Remove all existing handlers from the root logger
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
     
-    # Add file handler if log file specified
+    # Configure console handler for root logger
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    console_handler.setLevel(log_level)
+    root_logger.addHandler(console_handler)
+    root_logger.setLevel(log_level)
+    
+    # Configure a separate file handler if log file specified
+    file_handler = None
     if args.log:
         file_handler = logging.FileHandler(args.log)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        logger.addHandler(file_handler)
+        file_handler.setLevel(log_level)
+        root_logger.addHandler(file_handler)
+    
+    # Configure package-level loggers with propagation=True
+    # This ensures all logs go through the root logger
+    # We'll only set the appropriate levels on each package logger
+    for module_name in ['preserve', 'preservelib', 'preservelib.operations', 'preservelib.dazzlelink']:
+        module_logger = logging.getLogger(module_name)
+        
+        # Remove any existing handlers to avoid duplication
+        for handler in module_logger.handlers[:]:
+            module_logger.removeHandler(handler)
+            
+        # Set proper level but let propagation work
+        module_logger.setLevel(log_level)
+        module_logger.propagate = True  # Ensure propagation is enabled
+    
+    # Get logger for this module to return
+    logger = logging.getLogger('preserve')
     
     return logger
 
@@ -162,6 +199,10 @@ def create_parser():
                               help='Hash algorithm(s) to use for verification (can specify multiple)')
     verify_parser.add_argument('--manifest', help='Manifest file to use for verification')
     verify_parser.add_argument('--report', help='Write verification report to specified file')
+    verify_parser.add_argument('--use-dazzlelinks', action='store_true',
+                              help='Use dazzlelinks for verification if no manifest is found')
+    verify_parser.add_argument('--no-dazzlelinks', action='store_true',
+                              help='Do not use dazzlelinks for verification')
     
     # === RESTORE operation ===
     restore_parser = subparsers.add_parser('RESTORE', help='Restore files to their original locations')
@@ -175,6 +216,10 @@ def create_parser():
                                help='Force restoration even if verification fails')
     restore_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'], 
                                help='Hash algorithm(s) to use for verification (can specify multiple)')
+    restore_parser.add_argument('--use-dazzlelinks', action='store_true',
+                               help='Use dazzlelinks for restoration if no manifest is found')
+    restore_parser.add_argument('--no-dazzlelinks', action='store_true',
+                               help='Do not use dazzlelinks for restoration')
     
     # === CONFIG operation ===
     config_parser = subparsers.add_parser('CONFIG', help='View or modify configuration settings')
@@ -260,6 +305,8 @@ def _add_dazzlelink_args(parser):
     dazzle_group.add_argument('--dazzlelink-dir', help='Directory for dazzlelinks (default: .preserve/dazzlelinks)')
     dazzle_group.add_argument('--dazzlelink-with-files', action='store_true', 
                              help='Store dazzlelinks alongside copied files')
+    dazzle_group.add_argument('--dazzlelink-mode', choices=['info', 'open', 'auto'], default='info',
+                             help='Default execution mode for dazzlelinks (default: info)')
 
 def find_files_from_args(args):
     """Find files based on command-line arguments"""
@@ -414,7 +461,7 @@ def get_path_style(args):
     elif args.flat:
         return 'flat'
     else:
-        return 'relative'  # Default
+        return 'absolute'  # Default to absolute for better preservation
 
 def get_preserve_dir(args, dest_path):
     """Get preserve directory path"""
@@ -438,28 +485,154 @@ def get_manifest_path(args, preserve_dir):
     return Path(args.dst) / 'preserve_manifest.json'
 
 def get_dazzlelink_dir(args, preserve_dir):
-    """Get dazzlelink directory path"""
+    """
+    Get dazzlelink directory path based on user options.
+    
+    This function determines where to store dazzlelink files based on
+    user arguments. It respects the path preservation style (--abs, --rel, --flat)
+    and properly structures the dazzlelink directory to mirror the destination.
+    
+    Args:
+        args: Command-line arguments
+        preserve_dir: Preserve directory path
+        
+    Returns:
+        Path object for dazzlelink directory or None if not applicable
+    """
     if not args.dazzlelink:
         return None
     
     if args.dazzlelink_with_files:
         return None  # Store alongside files
     
+    # Base destination path
+    dest_base = Path(args.dst)
+    
     if args.dazzlelink_dir:
-        dl_dir = Path(args.dazzlelink_dir)
+        # User specified a custom dazzlelink directory
+        # Make it relative to the destination path
+        custom_dir = args.dazzlelink_dir
+        
+        # If it's an absolute path, use it directly
+        if Path(custom_dir).is_absolute():
+            dl_dir = Path(custom_dir)
+        else:
+            # Otherwise, make it relative to the destination
+            dl_dir = dest_base / custom_dir
+            
         dl_dir.mkdir(parents=True, exist_ok=True)
         return dl_dir
     
     if preserve_dir:
+        # Default to .preserve/dazzlelinks in the destination directory
         dl_dir = preserve_dir / 'dazzlelinks'
         dl_dir.mkdir(parents=True, exist_ok=True)
         return dl_dir
     
-    return None
+    # If no preserve directory, create .dazzlelinks in the destination
+    dl_dir = dest_base / '.dazzlelinks'
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    return dl_dir
 
 def handle_copy_operation(args, logger):
     """Handle COPY operation"""
     logger.info("Starting COPY operation")
+    
+    # Early debug info for path style
+    path_style = get_path_style(args)
+    if path_style == 'relative':
+        print(f"\nUsing RELATIVE path style for COPY operation")
+        if args.srchPath:
+            print(f"  Source base directory: {args.srchPath[0]}")
+        else:
+            print(f"  No explicit source base directory provided")
+            print(f"  Will attempt to find a common base directory for all files")
+            
+            # Find the longest common path prefix for files in --rel mode
+            if args.loadIncludes:
+                try:
+                    # Define a function to find the longest common prefix of paths
+                    def find_longest_common_path_prefix(paths):
+                        """Find the longest common directory prefix of a list of paths."""
+                        if not paths:
+                            return None
+                            
+                        # Convert all paths to Path objects and normalize separators
+                        normalized_paths = []
+                        for p in paths:
+                            try:
+                                # Convert string to Path
+                                path_obj = Path(p.strip())
+                                # Convert to string with forward slashes for consistency
+                                norm_path = str(path_obj).replace('\\', '/')
+                                normalized_paths.append(norm_path)
+                            except Exception:
+                                # Skip invalid paths
+                                continue
+                                
+                        if not normalized_paths:
+                            return None
+                            
+                        # Split all paths into parts
+                        parts_list = [p.split('/') for p in normalized_paths]
+                        
+                        # Find common prefix parts
+                        common_parts = []
+                        for parts_tuple in zip(*parts_list):
+                            if len(set(parts_tuple)) == 1:  # All parts at this position are the same
+                                common_parts.append(parts_tuple[0])
+                            else:
+                                break
+                                
+                        # Special handling for Windows drive letters
+                        if sys.platform == 'win32' and len(common_parts) > 0:
+                            # If only the drive letter is common, it's not a useful prefix
+                            if len(common_parts) == 1 and common_parts[0].endswith(':'):
+                                drive_letter = common_parts[0]
+                                # Check if next part is common even if not all paths have it
+                                next_parts = set()
+                                for parts in parts_list:
+                                    if len(parts) > 1:
+                                        next_parts.add(parts[1])
+                                # If there's a common next part, include it
+                                if len(next_parts) == 1:
+                                    common_parts.append(next_parts.pop())
+                                    
+                        # Build the common prefix
+                        if not common_parts:
+                            return None
+                        
+                        # Join with appropriate separator and convert back to Path
+                        common_prefix = '/'.join(common_parts)
+                        # For Windows, we need to add back the path separator if it's just a drive
+                        if sys.platform == 'win32' and common_prefix.endswith(':'):
+                            common_prefix += '/'
+                            
+                        # Convert to a proper Path object using original separators
+                        if sys.platform == 'win32':
+                            common_prefix = common_prefix.replace('/', '\\')
+                            
+                        return Path(common_prefix)
+                    
+                    # Read the file list
+                    with open(args.loadIncludes, 'r') as f:
+                        file_lines = [line.strip() for line in f.readlines() if line.strip() and not line.startswith('#')]
+                        
+                    # Find the common prefix
+                    common_prefix = find_longest_common_path_prefix(file_lines)
+                    if common_prefix:
+                        print(f"  Found common path prefix: {common_prefix}")
+                        print(f"  Will use this as base directory for relative paths")
+                        # Store in global options to be used later
+                        args.common_prefix = common_prefix
+                    else:
+                        print(f"  No common path prefix found among input files")
+                        print(f"  Will use nearest common parent directories when possible")
+                except Exception as e:
+                    logger.debug(f"Error analyzing include file: {e}")
+        
+        include_base = args.includeBase if hasattr(args, 'includeBase') else False
+        print(f"  Include base directory name: {include_base}")
     
     # Find source files
     source_files = find_files_from_args(args)
@@ -501,6 +674,7 @@ def handle_copy_operation(args, logger):
         'hash_algorithm': hash_algorithms[0],  # Use first algorithm for primary verification
         'create_dazzlelinks': args.dazzlelink if hasattr(args, 'dazzlelink') else False,
         'dazzlelink_dir': dazzlelink_dir,
+        'dazzlelink_mode': args.dazzlelink_mode if hasattr(args, 'dazzlelink_mode') else 'info',
         'dry_run': args.dry_run if hasattr(args, 'dry_run') else False
     }
     
@@ -522,6 +696,14 @@ def handle_copy_operation(args, logger):
     print(f"  Succeeded: {result.success_count()}")
     print(f"  Failed: {result.failure_count()}")
     print(f"  Skipped: {result.skip_count()}")
+    
+    # Print detailed skipped file info if there are skipped files
+    if result.skip_count() > 0:
+        print("\nSkipped Files (all):")
+        for i, (source, dest) in enumerate(result.skipped):
+            reason = result.error_messages.get(source, "Unknown reason")
+            print(f"  {i+1}. {source} -> {dest}")
+            print(f"     Reason: {reason}")
     
     if options['verify']:
         print(f"  Verified: {result.verified_count()}")
@@ -577,6 +759,7 @@ def handle_move_operation(args, logger):
         'hash_algorithm': hash_algorithms[0],  # Use first algorithm for primary verification
         'create_dazzlelinks': args.dazzlelink if hasattr(args, 'dazzlelink') else False,
         'dazzlelink_dir': dazzlelink_dir,
+        'dazzlelink_mode': args.dazzlelink_mode if hasattr(args, 'dazzlelink_mode') else 'info',
         'dry_run': args.dry_run if hasattr(args, 'dry_run') else False,
         'force': args.force if hasattr(args, 'force') else False
     }
@@ -629,7 +812,16 @@ def handle_verify_operation(args, logger):
     # Get manifest path
     manifest_path = Path(args.manifest) if args.manifest else None
     
-    if not manifest_path and not source_path:
+    # Check for manifest
+    if manifest_path and manifest_path.exists():
+        try:
+            # Just verify the manifest exists and is valid
+            test_man = manifest.PreserveManifest(manifest_path)
+            logger.info(f"Found valid manifest at {manifest_path}")
+        except Exception as e:
+            logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")
+            manifest_path = None
+    elif not manifest_path and not source_path:
         # Try to find manifest in common locations
         potential_manifests = [
             dest_path / '.preserve' / 'manifest.json',
@@ -639,17 +831,33 @@ def handle_verify_operation(args, logger):
         
         for path in potential_manifests:
             if path.exists():
-                manifest_path = path
-                break
+                try:
+                    test_man = manifest.PreserveManifest(path)
+                    manifest_path = path
+                    logger.info(f"Found valid manifest at {manifest_path}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Found manifest at {path}, but it is invalid: {e}")
     
-    if not manifest_path and not source_path:
-        logger.error("No source or manifest provided for verification")
+    # Determine dazzlelink usage
+    use_dazzlelinks = True  # Default is to use dazzlelinks if no manifest/source
+    if args.no_dazzlelinks:
+        use_dazzlelinks = False
+    elif args.use_dazzlelinks:
+        use_dazzlelinks = True
+    
+    # If no manifest/source and dazzlelinks disabled, report error
+    if not manifest_path and not source_path and not use_dazzlelinks:
+        logger.error("No source or manifest provided for verification, and dazzlelink usage is disabled")
+        logger.error("Use --use-dazzlelinks to enable verification using dazzlelinks")
         return 1
     
     # Prepare operation options
     options = {
         'hash_algorithm': hash_algorithms[0],
-        'report_path': args.report if hasattr(args, 'report') else None
+        'report_path': args.report if hasattr(args, 'report') else None,
+        'use_dazzlelinks': use_dazzlelinks,
+        'dest_directory': str(dest_path)  # For finding dazzlelinks
     }
     
     # Collect source and destination files
@@ -701,12 +909,19 @@ def handle_verify_operation(args, logger):
 def handle_restore_operation(args, logger):
     """Handle RESTORE operation"""
     logger.info("Starting RESTORE operation")
+    logger.debug(f"[DEBUG] RESTORE called with args: {args}")
     
     # Get source path
     source_path = Path(args.src)
     if not source_path.exists():
         logger.error(f"Source directory does not exist: {source_path}")
         return 1
+        
+    # Warning about hardcoded paths in the code
+    source_name = source_path.name
+    if source_name != 'dst2' and 'dst2' in str(source_path):
+        print(f"\nNOTE: You're running RESTORE on directory '{source_name}', but the code might have some ")
+        print(f"references to 'dst2'. If you encounter issues, please report this.")
     
     # Get manifest path
     manifest_path = Path(args.manifest) if args.manifest else None
@@ -724,18 +939,27 @@ def handle_restore_operation(args, logger):
                 manifest_path = path
                 break
     
-    # Try to load manifest
-    man = None
+    # Check for manifest
     if manifest_path and manifest_path.exists():
         try:
-            man = manifest.PreserveManifest(manifest_path)
-            logger.info(f"Loaded manifest from {manifest_path}")
+            # Just verify the manifest exists and is valid
+            test_man = manifest.PreserveManifest(manifest_path)
+            logger.info(f"Found valid manifest at {manifest_path}")
         except Exception as e:
-            logger.error(f"Error loading manifest: {e}")
-            return 1
+            logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")
+            manifest_path = None
     
-    if not man:
-        logger.error("No manifest found for restoration")
+    # Determine dazzlelink usage
+    use_dazzlelinks = True  # Default is to use dazzlelinks if no manifest
+    if args.no_dazzlelinks:
+        use_dazzlelinks = False
+    elif args.use_dazzlelinks:
+        use_dazzlelinks = True
+    
+    # If no manifest and dazzlelinks disabled, report error
+    if not manifest_path and not use_dazzlelinks:
+        logger.error("No manifest found and dazzlelink usage is disabled")
+        logger.error("Use --use-dazzlelinks to enable restoration from dazzlelinks")
         return 1
     
     # Get hash algorithms
@@ -748,8 +972,11 @@ def handle_restore_operation(args, logger):
         'verify': True,
         'hash_algorithm': hash_algorithms[0],
         'dry_run': args.dry_run if hasattr(args, 'dry_run') else False,
-        'force': args.force if hasattr(args, 'force') else False
+        'force': args.force if hasattr(args, 'force') else False,
+        'use_dazzlelinks': use_dazzlelinks
     }
+    
+    logger.debug(f"[DEBUG] RESTORE options: {options}")
     
     # Create command line for logging
     command_line = f"preserve RESTORE {' '.join(sys.argv[2:])}"
@@ -768,6 +995,37 @@ def handle_restore_operation(args, logger):
     print(f"  Succeeded: {result.success_count()}")
     print(f"  Failed: {result.failure_count()}")
     print(f"  Skipped: {result.skip_count()}")
+    
+    # Print detailed skipped file info
+    if result.skip_count() > 0:
+        print("\nSkipped Files (first 10):")
+        skip_count = 0
+        for source, dest in result.skipped:
+            reason = result.error_messages.get(source, "Unknown reason")
+            # Check if source file exists and show more details
+            source_exists = Path(source).exists()
+            print(f"  {source} -> {dest}")
+            print(f"    Reason: {reason}")
+            print(f"    Source exists: {source_exists}")
+            if not source_exists:
+                # Check if we can find the file in a subdirectory of the source
+                source_dir = Path(args.src)
+                filename = Path(source).name
+                matching_files = list(source_dir.glob(f"**/{filename}"))
+                if matching_files:
+                    print(f"    Found similar files:")
+                    for i, match in enumerate(matching_files[:3]):
+                        print(f"      {match}")
+                    if len(matching_files) > 3:
+                        print(f"      ... and {len(matching_files) - 3} more")
+                else:
+                    print(f"    No similar files found")
+            print("")
+            skip_count += 1
+            if skip_count >= 10:
+                if result.skip_count() > 10:
+                    print(f"  ... and {result.skip_count() - 10} more")
+                break
     
     if options['verify']:
         print(f"  Verified: {result.verified_count()}")

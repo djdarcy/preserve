@@ -1,15 +1,21 @@
-# Preserve
+# Preserve (v0.2.1)
 
 A cross-platform file preservation tool with path normalization and verification.
 
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/username/preserve/releases/tag/v0.2.1)
+
 ## Features
 
-- Copy or move files with path preservation (relative, absolute, or flat structures)
-- File verification with multiple hash algorithms (MD5, SHA1, SHA256, SHA512)
-- Preserve file attributes (timestamps, permissions, etc.)
-- Detailed operation manifests for tracking and reversibility
-- Optional integration with dazzlelink for metadata storage
-- Cross-platform compatibility (Windows, Linux, macOS)
+- **Path Preservation**: Copy or move files with multiple path preservation styles:
+  - Relative paths that maintain directory structure (`--rel`)
+  - Absolute paths with drive letter preservation (`--abs`)
+  - Flat structure with all files in one directory (`--flat`)
+- **Verification**: File integrity verification with multiple hash algorithms (MD5, SHA1, SHA256, SHA512)
+- **Metadata**: Preserve file attributes (timestamps, permissions, etc.)
+- **Manifests**: Detailed operation tracking for auditing and reversibility
+- **Restoration**: Restore files to their original locations with verification
+- **DazzleLink**: Optional integration with dazzlelink for enhanced metadata storage and file references
+- **Cross-Platform**: Works on Windows, Linux, and macOS
 
 ## Installation
 
@@ -73,6 +79,33 @@ preserve RESTORE --src "e:/backup" --force
 - `--overwrite`: Overwrite existing files in destination
 
 See `preserve --help` for full documentation and examples.
+
+## Recommended Workflow
+
+For critical data, we recommend following a secure multi-step workflow:
+
+1. **Pre-Verification**: Analyze and hash source files
+2. **Copy with Structure**: Use `--rel --includeBase` to maintain directory structure
+3. **Post-Copy Verification**: Verify all files match their source
+4. **Test Restoration**: Run `--dry-run` to confirm restore will work
+5. **Source Cleanup**: Only remove originals after verification passes
+
+See the documentation for more details on secure workflows.
+
+## What's New in v0.2.1
+
+- Improved relative path mode fallback behavior: now falls back to absolute path style (preserving structure) instead of flat structure when no common base directory can be found
+- Enhanced logging for path resolution to make fallback behavior clearer
+- Added test script for relative path fallback scenarios
+
+## What's New in v0.2.0
+
+- Fixed relative path mode (`--rel`) to properly preserve directory structure
+- Improved path detection and common base directory finding
+- Fixed RESTORE operation for all path modes
+- Enhanced debugging and error reporting
+- Fixed duplicate log messages
+- Added verification report generation
 
 ## License
 

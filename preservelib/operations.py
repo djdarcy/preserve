@@ -213,7 +213,7 @@ def copy_operation(
     """
     # Initialize default options
     default_options = {
-        'path_style': 'relative',
+        'path_style': 'absolute',  # Default to absolute path style for better preservation
         'include_base': False,
         'source_base': None,
         'overwrite': False,
@@ -222,6 +222,7 @@ def copy_operation(
         'hash_algorithm': 'SHA256',
         'create_dazzlelinks': False,
         'dazzlelink_dir': None,
+        'dazzlelink_mode': 'info',  # Default execution mode for dazzlelinks
         'dry_run': False
     }
     
@@ -248,6 +249,103 @@ def copy_operation(
     dest_base_path = Path(dest_base)
     dest_base_path.mkdir(parents=True, exist_ok=True)
     
+    # If using relative paths, make all source files available to find common base
+    if options['path_style'] == 'relative':
+        options['all_source_files'] = source_files
+        
+        # See if we can determine a common base directory
+        if not options['source_base']:
+            # Define a robust function to find the longest common prefix
+            def find_longest_common_path_prefix(paths):
+                """Find the longest common directory prefix of a list of paths."""
+                if not paths:
+                    return None
+                    
+                # Convert all paths to Path objects and normalize separators
+                normalized_paths = []
+                for p in paths:
+                    try:
+                        # Convert to string for consistent handling
+                        path_str = str(p)
+                        # Convert to forward slashes for consistency
+                        norm_path = path_str.replace('\\', '/')
+                        normalized_paths.append(norm_path)
+                    except Exception:
+                        # Skip invalid paths
+                        continue
+                        
+                if not normalized_paths:
+                    return None
+                    
+                # Split all paths into parts
+                parts_list = [p.split('/') for p in normalized_paths]
+                
+                # Find common prefix parts
+                common_parts = []
+                for parts_tuple in zip(*parts_list):
+                    if len(set(parts_tuple)) == 1:  # All parts at this position are the same
+                        common_parts.append(parts_tuple[0])
+                    else:
+                        break
+                        
+                # Special handling for Windows drive letters
+                if sys.platform == 'win32' and len(common_parts) > 0:
+                    # If only the drive letter is common, it's not a useful prefix
+                    if len(common_parts) == 1 and common_parts[0].endswith(':'):
+                        drive_letter = common_parts[0]
+                        # Check if next part is common even if not all paths have it
+                        next_parts = set()
+                        for parts in parts_list:
+                            if len(parts) > 1:
+                                next_parts.add(parts[1])
+                        # If there's a common next part, include it
+                        if len(next_parts) == 1:
+                            common_parts.append(next_parts.pop())
+                            
+                # Build the common prefix
+                if not common_parts:
+                    return None
+                
+                # Join with appropriate separator and convert back to Path
+                common_prefix = '/'.join(common_parts)
+                # For Windows, we need to add back the path separator if it's just a drive
+                if sys.platform == 'win32' and common_prefix.endswith(':'):
+                    common_prefix += '/'
+                    
+                # Convert to a proper Path object using original separators
+                if sys.platform == 'win32':
+                    common_prefix = common_prefix.replace('/', '\\')
+                    
+                return Path(common_prefix)
+            
+            # Import pathutils for path tree analysis
+            try:
+                from . import pathutils
+                
+                # Check if a common prefix was already computed in args
+                if 'args' in locals() and hasattr(args, 'common_prefix') and args.common_prefix:
+                    logger.info(f"Using pre-computed common path prefix: {args.common_prefix}")
+                    options['source_base'] = args.common_prefix
+                else:
+                    # Use the path tree to find the common base directory
+                    common_base = pathutils.find_common_base_directory(source_files)
+                    if common_base:
+                        logger.info(f"Found common base directory using path tree: {common_base}")
+                        options['source_base'] = common_base
+                    else:
+                        # Fall back to simple common prefix algorithm
+                        common_prefix = find_longest_common_path_prefix(source_files)
+                        if common_prefix:
+                            logger.info(f"Found common parent directory for all files: {common_prefix}")
+                            options['source_base'] = common_prefix
+            except ImportError as e:
+                # Fall back to original algorithm if pathutils not available
+                logger.warning(f"PathTree not available, using simple prefix algorithm: {e}")
+                common_prefix = find_longest_common_path_prefix(source_files)
+                if common_prefix:
+                    logger.info(f"Found common parent directory for all files: {common_prefix}")
+                    options['source_base'] = common_prefix
+    
     # Process each source file
     for source_file in source_files:
         source_path = Path(source_file)
@@ -263,30 +361,253 @@ def copy_operation(
         
         try:
             # Determine destination path
-            source_base = options['source_base'] if options['source_base'] else Path(source_path).parent
+            # For relative path style, we need to find a common base directory for all files if not explicitly provided
+            if options['path_style'] == 'relative' and not options['source_base']:
+                # Use the parent folder of the file by default
+                source_base = Path(source_path).parent
+                logger.debug(f"[DEBUG PATH] Initial source_base for {source_path}: {source_base}")
+                
+                # If we can detect the most common parent folder among all source files, use that instead
+                if hasattr(options, 'all_source_files') and options['all_source_files']:
+                    # This is the list of all source files being processed
+                    all_files = options['all_source_files']
+                    logger.debug(f"[DEBUG PATH] Found {len(all_files)} files in options.all_source_files")
+                    
+                    # Try to find common parent directories
+                    if len(all_files) > 1:
+                        logger.debug(f"[DEBUG PATH] Finding common base path for {len(all_files)} files")
+                        # Get all parent directories for each file
+                        parent_dirs = []
+                        for file in all_files:
+                            file_path = Path(file)
+                            logger.debug(f"[DEBUG PATH]   Analyzing parents for: {file_path}")
+                            # Add all parents to the list
+                            current = file_path.parent
+                            parent_count = 0
+                            while current != current.parent:  # Stop at root
+                                parent_dirs.append(str(current))
+                                if parent_count < 3:  # Limit logging to first 3 levels
+                                    logger.debug(f"[DEBUG PATH]     Parent {parent_count}: {current}")
+                                parent_count += 1
+                                current = current.parent
+                        
+                        # Count occurrences of each parent directory
+                        from collections import Counter
+                        parent_counts = Counter(parent_dirs)
+                        
+                        # Log the top 3 most common parent directories for debugging
+                        logger.debug(f"[DEBUG PATH] Most common parent directories:")
+                        for i, (parent, count) in enumerate(parent_counts.most_common(3)):
+                            coverage_pct = (count / len(all_files)) * 100
+                            logger.debug(f"[DEBUG PATH]   {i+1}. {parent}: {count} files ({coverage_pct:.1f}%)")
+                        
+                        # Find the most common parent that's at least 2 levels deep
+                        for parent, count in parent_counts.most_common():
+                            parent_path = Path(parent)
+                            # Check if this parent contains at least 75% of the files
+                            coverage_pct = (count / len(all_files)) * 100
+                            parts = len(parent_path.parts)
+                            
+                            logger.debug(f"[DEBUG PATH] Evaluating parent: {parent_path} ({coverage_pct:.1f}% coverage, {parts} path parts)")
+                            
+                            if count >= len(all_files) * 0.75:
+                                # Ensure it's not just the root or a shallow directory
+                                if (sys.platform == 'win32' and parts > 1) or (sys.platform != 'win32' and parts > 1):
+                                    logger.info(f"[DEBUG PATH] Selected common parent directory: {parent_path} ({coverage_pct:.1f}% coverage)")
+                                    source_base = parent_path
+                                    logger.info(f"Using common parent directory for relative paths: {source_base}")
+                                    break
+                                else:
+                                    logger.debug(f"[DEBUG PATH] Rejected parent as too shallow: {parent_path} ({parts} parts)")
+                            else:
+                                logger.debug(f"[DEBUG PATH] Rejected parent due to low coverage: {parent_path} ({coverage_pct:.1f}%)")
+            else:
+                source_base = options['source_base'] if options['source_base'] else Path(source_path).parent
+                logger.debug(f"[DEBUG] Final source_base for {source_path}: {source_base}")
             
             if options['path_style'] == 'relative':
                 # Relative to source_base
                 try:
-                    if options['include_base']:
-                        # Include the base directory name
-                        rel_path = source_path.relative_to(Path(source_base).parent)
-                        dest_path = dest_base_path / rel_path
-                    else:
-                        # Just the path relative to source_base
-                        rel_path = source_path.relative_to(source_base)
-                        dest_path = dest_base_path / rel_path
-                except ValueError:
-                    # Not relative to source_base, use absolute style
-                    logger.warning(f"Path {source_path} not relative to {source_base}, using absolute style")
+                    # Try different strategies to find a meaningful relative path
+                    source_path_str = str(source_path)
+                    
+                    # Add detailed logging for path structure
+                    logger.debug(f"[DEBUG PATH] Processing relative path for: {source_path}")
+                    logger.debug(f"[DEBUG PATH] Source path parts: {list(Path(source_path).parts)}")
+                    logger.debug(f"[DEBUG PATH] Options source_base: {options['source_base'] if options['source_base'] else 'None'}")
+                    logger.debug(f"[DEBUG PATH] Calculated source_base: {source_base if source_base else 'None'}")
+                    logger.debug(f"[DEBUG PATH] Destination base: {dest_base_path}")
+                    
+                    # Test if source path is actually within the calculated source_base
+                    if source_base:
+                        is_within_source_base = False
+                        try:
+                            # Convert both to strings with normalized separators for comparison
+                            source_str = str(source_path).replace('\\', '/')
+                            base_str = str(source_base).replace('\\', '/')
+                            
+                            # Check if source starts with base
+                            is_within_source_base = source_str.startswith(base_str)
+                            logger.debug(f"[DEBUG PATH] Is source within source_base: {is_within_source_base}")
+                            logger.debug(f"[DEBUG PATH] Source normalized: {source_str}")
+                            logger.debug(f"[DEBUG PATH] Base normalized: {base_str}")
+                        except Exception as path_check_error:
+                            logger.debug(f"[DEBUG PATH] Error checking if path is within source_base: {path_check_error}")
+                    
+                    # Define a helper function to handle potential errors
+                    def try_relative_to(base_path, fallback=None):
+                        try:
+                            rel = source_path.relative_to(base_path)
+                            logger.debug(f"[DEBUG PATH] Successfully made relative to {base_path}: {rel}")
+                            return rel
+                        except ValueError as ve:
+                            logger.debug(f"[DEBUG PATH] Failed to make relative to {base_path}: {ve}")
+                            return fallback
+                    
+                    # Use a while True loop with break statements for clearer strategy flow control
+                    # This ensures we exit after the first successful strategy
+                    while True:
+                        # Strategy 1: Use the computed common prefix from options (if available)
+                        if options['source_base']:
+                            logger.debug(f"[DEBUG PATH] Trying Strategy 1: options['source_base'] = {options['source_base']}")
+                            
+                            if options['include_base']:
+                                # Include the base directory name
+                                base_parent = Path(options['source_base']).parent
+                                logger.debug(f"[DEBUG PATH] Using base parent with include_base: {base_parent}")
+                                
+                                rel_path = try_relative_to(base_parent)
+                                if rel_path:
+                                    dest_path = dest_base_path / rel_path
+                                    logger.debug(f"[DEBUG PATH] Strategy 1A - include_base SUCCESS: {rel_path} → {dest_path}")
+                                    break  # Successfully found a path, so exit the strategy loop
+                                else:
+                                    logger.debug(f"[DEBUG PATH] Strategy 1A - include_base FAILED")
+                        
+                            # Just the path relative to source_base (standard relative path)
+                            source_base_path = Path(options['source_base'])
+                            rel_path = try_relative_to(source_base_path)
+                            if rel_path:
+                                # This is the key fix - properly preserve subdirectory structure
+                                dest_path = dest_base_path / rel_path
+                                logger.debug(f"[DEBUG PATH] Strategy 1B - relative to source_base SUCCESS: {rel_path} → {dest_path}")
+                                break  # Successfully found a path, so exit the strategy loop
+                            else:
+                                logger.debug(f"[DEBUG PATH] Strategy 1B - relative to source_base FAILED")
+                        else:
+                            logger.debug(f"[DEBUG PATH] Strategy 1 SKIPPED - No options['source_base'] available")
+                    
+                        # Strategy 2: Use the locally calculated source_base
+                        if source_base:
+                            logger.debug(f"[DEBUG PATH] Trying Strategy 2: calculated source_base = {source_base}")
+                            
+                            try:
+                                # Try to use the source_base directly
+                                rel_path = source_path.relative_to(source_base)
+                                if rel_path:
+                                    # Preserve the full subdirectory structure from the common base
+                                    dest_path = dest_base_path / rel_path
+                                    logger.debug(f"[DEBUG PATH] Strategy 2 - relative to calculated source_base SUCCESS: {rel_path} → {dest_path}")
+                                    break  # Successfully found a path, so exit the strategy loop
+                                else:
+                                    logger.debug(f"[DEBUG PATH] Strategy 2 - Empty rel_path, continuing")
+                            except ValueError as ve:
+                                # If we can't make it relative to source_base, log and continue to next strategy
+                                logger.debug(f"[DEBUG PATH] Strategy 2 FAILED - Unable to make relative to {source_base}: {ve}")
+                        else:
+                            logger.debug(f"[DEBUG PATH] Strategy 2 SKIPPED - No calculated source_base available")
+                            
+                        # Strategy 3: Find a common parent directory (dynamically)
+                        logger.debug(f"[DEBUG PATH] Trying Strategy 3: parent directory")
+                        if source_path.parent != source_path:
+                            try:
+                                parent_dir = source_path.parent
+                                logger.debug(f"[DEBUG PATH] Parent directory: {parent_dir}")
+                                
+                                # We'll use the source filename as the relative path component
+                                rel_filename = source_path.name
+                                
+                                # Use parent directory name to preserve some structure
+                                # For deeper directory structure, we could use more parent components
+                                dest_path = dest_base_path / parent_dir.name / rel_filename
+                                logger.debug(f"[DEBUG PATH] Strategy 3 - parent directory SUCCESS: {parent_dir.name}/{rel_filename} → {dest_path}")
+                                break  # Successfully found a path, so exit the strategy loop
+                            except Exception as e:
+                                logger.debug(f"[DEBUG PATH] Strategy 3 FAILED - Error using parent directory: {e}")
+                        else:
+                            logger.debug(f"[DEBUG PATH] Strategy 3 SKIPPED - Source path has no parent (root path)")
+                    
+                        # Strategy 4: Use absolute path style as fallback instead of flat structure
+                        # This preserves more directory info than the previous flat fallback
+                        logger.debug(f"[DEBUG PATH] Trying Strategy 4: absolute path fallback")
+                        
+                        # Important: This should only run if we don't already have a dest_path
+                        # This is a safety check to make sure we don't override previous successful strategies
+                        if 'dest_path' not in locals():
+                            # Use the absolute path style instead of flat
+                            if sys.platform == 'win32':
+                                # Windows: use drive letter as directory
+                                drive, path = os.path.splitdrive(str(source_path))
+                                drive = drive.rstrip(':')  # Remove colon
+                                dest_path = dest_base_path / drive / path.lstrip('\\/')
+                                logger.debug(f"[DEBUG PATH] Strategy 4 - Windows absolute path fallback: {drive}/{path.lstrip('\\/')} → {dest_path}")
+                            else:
+                                # Unix: use root-relative path
+                                unix_path = str(source_path).lstrip('/')
+                                dest_path = dest_base_path / unix_path
+                                logger.debug(f"[DEBUG PATH] Strategy 4 - Unix absolute path fallback: {unix_path} → {dest_path}")
+                            
+                            logger.info(f"Using absolute path fallback instead of flat structure for {source_path}")
+                        else:
+                            logger.debug(f"[DEBUG PATH] Strategy 4 SKIPPED - dest_path already set by a previous strategy")
+                            
+                        # If we've gone through all strategies, exit the loop now
+                        logger.debug(f"[DEBUG PATH] All strategies processed, breaking loop")
+                        break
+                        
+                except ValueError as e:
+                    # Not relative to source_base or any other strategy, use absolute style
+                    logger.warning(f"Path {source_path} could not be made relative: {e}, using absolute path style to preserve directory structure")
+                    logger.debug(f"[DEBUG PATH] Falling back to absolute path style for {source_path}")
+                    logger.debug(f"[DEBUG PATH] Source path parts: {list(Path(source_path).parts)}")
+                    logger.debug(f"[DEBUG PATH] Source base: {source_base if 'source_base' in locals() else 'not defined'}")
+                    
                     if sys.platform == 'win32':
                         # Windows: use drive letter as directory
                         drive, path = os.path.splitdrive(str(source_path))
                         drive = drive.rstrip(':')  # Remove colon
                         dest_path = dest_base_path / drive / path.lstrip('\\/')
+                        logger.debug(f"[DEBUG PATH] Windows path components - drive: {drive}, path: {path}")
+                        logger.debug(f"[DEBUG PATH] Final absolute path: {dest_path}")
                     else:
                         # Unix: use root-relative path
-                        dest_path = dest_base_path / str(source_path).lstrip('/')
+                        unix_path = str(source_path).lstrip('/')
+                        dest_path = dest_base_path / unix_path
+                        logger.debug(f"[DEBUG PATH] Unix path components - path: {unix_path}")
+                        logger.debug(f"[DEBUG PATH] Final Unix absolute path: {dest_path}")
+                    
+                    logger.info(f"Using absolute path style instead of flat structure for {source_path}")
+                except Exception as e:
+                    # Unknown error, use absolute style
+                    logger.warning(f"Error processing relative path for {source_path}: {e}, using absolute path style to preserve directory structure")
+                    logger.debug(f"[DEBUG PATH] Exception during relative path handling: {str(e)}")
+                    logger.debug(f"[DEBUG PATH] Exception type: {type(e).__name__}")
+                    
+                    if sys.platform == 'win32':
+                        # Windows: use drive letter as directory
+                        drive, path = os.path.splitdrive(str(source_path))
+                        drive = drive.rstrip(':')  # Remove colon
+                        dest_path = dest_base_path / drive / path.lstrip('\\/')
+                        logger.debug(f"[DEBUG PATH] Windows path components - drive: {drive}, path: {path}")
+                        logger.debug(f"[DEBUG PATH] Final absolute path: {dest_path}")
+                    else:
+                        # Unix: use root-relative path
+                        unix_path = str(source_path).lstrip('/')
+                        dest_path = dest_base_path / unix_path
+                        logger.debug(f"[DEBUG PATH] Unix path components - path: {unix_path}")
+                        logger.debug(f"[DEBUG PATH] Final Unix absolute path: {dest_path}")
+                    
+                    logger.info(f"Using absolute path style instead of flat structure for {source_path}")
             
             elif options['path_style'] == 'absolute':
                 # Preserve absolute path
@@ -316,6 +637,27 @@ def copy_operation(
             if dest_path.exists() and not options['overwrite']:
                 result.add_skip(str(source_path), str(dest_path), "Destination exists and overwrite not enabled")
                 continue
+                
+            # Enhanced debug output for path resolution in relative mode
+            if options['path_style'] == 'relative':
+                logger.info(f"[DEBUG PATH] Relative path resolution results for {source_path}:")
+                logger.info(f"[DEBUG PATH]   - Source path: {source_path}")
+                logger.info(f"[DEBUG PATH]   - Source base: {source_base}")
+                logger.info(f"[DEBUG PATH]   - Destination path: {dest_path}")
+                logger.info(f"[DEBUG PATH]   - Source path components: {list(Path(source_path).parts)}")
+                if 'dest_path' in locals():
+                    try:
+                        rel_structure = list(Path(dest_path).relative_to(dest_base_path).parts)
+                        logger.info(f"[DEBUG PATH]   - Resulting subdirectory structure: {rel_structure}")
+                        logger.info(f"[DEBUG PATH]   - Subdirectory depth preserved: {len(rel_structure) > 0}")
+                    except ValueError:
+                        logger.info(f"[DEBUG PATH]   - Could not determine relative structure to {dest_base_path}")
+                    # Additional detail about the destination path
+                    logger.info(f"[DEBUG PATH]   - Destination exists: {Path(dest_path).exists()}")
+                    logger.info(f"[DEBUG PATH]   - Destination parent: {Path(dest_path).parent}")
+                    logger.info(f"[DEBUG PATH]   - Destination parent exists: {Path(dest_path).parent.exists()}")
+                else:
+                    logger.warning(f"[DEBUG PATH]   - No destination path was set!")
             
             # In dry run mode, just log what would be done
             if options['dry_run']:
@@ -358,9 +700,13 @@ def copy_operation(
             # Create dazzlelink if enabled
             if options['create_dazzlelinks']:
                 _create_dazzlelink(
-                    source_path, 
-                    dest_path, 
-                    options['dazzlelink_dir']
+                    source_path=source_path, 
+                    dest_path=dest_path, 
+                    dazzlelink_dir=options['dazzlelink_dir'],
+                    path_style=options['path_style'],
+                    dest_base=dest_base,
+                    mode=options.get('dazzlelink_mode', 'info'),  # Use the configured mode
+                    options=options  # Pass all options including all_source_files
                 )
             
             # Add success to result
@@ -421,7 +767,7 @@ def move_operation(
     """
     # Initialize default options
     default_options = {
-        'path_style': 'relative',
+        'path_style': 'absolute',  # Default to absolute path style for better preservation
         'include_base': False,
         'source_base': None,
         'overwrite': False,
@@ -430,6 +776,7 @@ def move_operation(
         'hash_algorithm': 'SHA256',
         'create_dazzlelinks': False,
         'dazzlelink_dir': None,
+        'dazzlelink_mode': 'info',  # Default execution mode for dazzlelinks
         'dry_run': False,
         'force': False  # Force removal even if verification fails
     }
@@ -534,6 +881,8 @@ def verify_operation(
     default_options = {
         'hash_algorithm': 'SHA256',
         'report_path': None,
+        'use_dazzlelinks': True,  # Use dazzlelinks if no manifest found
+        'dest_directory': None    # Destination directory (for finding dazzlelinks)
     }
     
     # Merge with provided options
@@ -553,7 +902,41 @@ def verify_operation(
         except Exception as e:
             logger.error(f"Error loading manifest {manifest_path}: {e}")
             result.add_failure("", "", f"Error loading manifest: {e}")
-            return result
+            # Don't return immediately - we might be able to use dazzlelinks
+    
+    # Try to use dazzlelinks if no manifest and option enabled
+    used_dazzlelinks = False
+    if not manifest and options['use_dazzlelinks'] and options['dest_directory']:
+        try:
+            # First check if dazzlelink is available
+            try:
+                from .dazzlelink import find_dazzlelinks_in_dir, dazzlelink_to_manifest, is_available
+                if not is_available():
+                    logger.warning("Dazzlelink integration not available")
+                    # Continue with no manifest and no dazzlelinks
+                else:
+                    # Search for dazzlelinks in destination directory
+                    dest_dir = options['dest_directory']
+                    dazzlelinks = find_dazzlelinks_in_dir(dest_dir, recursive=True)
+                    
+                    if dazzlelinks:
+                        # Convert dazzlelinks to a manifest structure
+                        manifest_data = dazzlelink_to_manifest(dazzlelinks)
+                        if manifest_data and 'files' in manifest_data and manifest_data['files']:
+                            # Create a manifest from the dazzlelink data
+                            manifest = PreserveManifest()
+                            # Replace the default manifest data with our converted data
+                            manifest.manifest = manifest_data
+                            logger.info(f"Created manifest from {len(dazzlelinks)} dazzlelinks")
+                            used_dazzlelinks = True
+                        else:
+                            logger.warning("No valid file information found in dazzlelinks")
+                    else:
+                        logger.warning(f"No dazzlelinks found in {dest_dir}")
+            except ImportError:
+                logger.warning("Dazzlelink module not available")
+        except Exception as e:
+            logger.error(f"Error using dazzlelinks: {e}")
     
     # If manifest provided but no files, verify all files in manifest
     if manifest and not source_files and not dest_files:
@@ -564,11 +947,27 @@ def verify_operation(
             if not source_path or not dest_path:
                 continue
             
+            # If using dazzlelinks, the paths may need adjusting
+            if used_dazzlelinks:
+                # In dazzlelink mode, source_path is the actual path we want to verify
+                # and we compare it to itself (dazzlelinks don't have a separate dest_path concept)
+                dest_path = source_path
+            
             # Check if destination exists
             dest_path_obj = Path(dest_path)
             if not dest_path_obj.exists():
-                result.add_failure(dest_path, "", "Destination file does not exist")
-                continue
+                # If we're using dazzlelinks, try with the destination directory
+                if used_dazzlelinks and options['dest_directory']:
+                    # Try relative to the destination directory
+                    alt_path = Path(options['dest_directory']) / Path(dest_path).name
+                    if alt_path.exists():
+                        dest_path_obj = alt_path
+                    else:
+                        result.add_failure(dest_path, "", "Destination file does not exist")
+                        continue
+                else:
+                    result.add_failure(dest_path, "", "Destination file does not exist")
+                    continue
             
             # Check if source exists
             source_path_obj = Path(source_path)
@@ -593,16 +992,16 @@ def verify_operation(
                 
                 # Verify destination against expected hash
                 verified, details = verify_file_hash(dest_path_obj, expected_hash)
-                result.add_verification(dest_path, verified, details)
+                result.add_verification(str(dest_path_obj), verified, details)
                 
                 if verified:
-                    result.add_success(source_path, dest_path, dest_path_obj.stat().st_size)
+                    result.add_success(source_path, str(dest_path_obj), dest_path_obj.stat().st_size)
                 else:
-                    result.add_failure(source_path, dest_path, "Verification failed")
+                    result.add_failure(source_path, str(dest_path_obj), "Verification failed")
                     
             except Exception as e:
-                logger.error(f"Error verifying {dest_path}: {e}")
-                result.add_failure(source_path, dest_path, str(e))
+                logger.error(f"Error verifying {dest_path_obj}: {e}")
+                result.add_failure(source_path, str(dest_path_obj), str(e))
     
     # If source and destination files provided, verify them
     elif source_files and dest_files:
@@ -647,9 +1046,13 @@ def verify_operation(
                 result.add_failure(str(source_path_obj), str(dest_path_obj), str(e))
     
     # Generate verification report if requested
-    if options['report_path'] and not result.is_success():
+    if options.get('report_path'):
         try:
-            _generate_verification_report(result, options['report_path'])
+            report_success = _generate_verification_report(result, options['report_path'])
+            if report_success:
+                logger.info(f"Verification report written to {options['report_path']}")
+            else:
+                logger.error(f"Failed to write verification report to {options['report_path']}")
         except Exception as e:
             logger.error(f"Error generating verification report: {e}")
     
@@ -681,7 +1084,8 @@ def restore_operation(
         'verify': True,
         'hash_algorithm': 'SHA256',
         'dry_run': False,
-        'force': False  # Force restoration even if verification fails
+        'force': False,  # Force restoration even if verification fails
+        'use_dazzlelinks': True  # Use dazzlelinks if no manifest found
     }
     
     # Merge with provided options
@@ -693,9 +1097,12 @@ def restore_operation(
     # Initialize operation result
     result = OperationResult('RESTORE', command_line)
     
+    # Source directory path
+    source_dir_path = Path(source_directory)
+    
     # Find manifest if not provided
+    manifest = None
     if not manifest_path:
-        source_dir_path = Path(source_directory)
         potential_manifests = [
             source_dir_path / '.preserve' / 'manifest.json',
             source_dir_path / '.preserve' / 'preserve_manifest.json',
@@ -705,19 +1112,58 @@ def restore_operation(
         for path in potential_manifests:
             if path.exists():
                 manifest_path = path
-                break
-        
-        if not manifest_path:
-            logger.error(f"No manifest file found in {source_directory}")
-            result.add_failure("", "", "No manifest file found")
-            return result
+                try:
+                    manifest = PreserveManifest(manifest_path)
+                    logger.info(f"Loaded manifest from {manifest_path}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Error loading manifest {manifest_path}: {e}")
     
-    # Load manifest
-    try:
-        manifest = PreserveManifest(manifest_path)
-    except Exception as e:
-        logger.error(f"Error loading manifest {manifest_path}: {e}")
-        result.add_failure("", "", f"Error loading manifest: {e}")
+    # If manifest path provided but not loaded yet, try to load it
+    if manifest_path and not manifest:
+        try:
+            manifest = PreserveManifest(manifest_path)
+            logger.info(f"Loaded manifest from {manifest_path}")
+        except Exception as e:
+            logger.error(f"Error loading manifest {manifest_path}: {e}")
+            # Don't return immediately - we might be able to use dazzlelinks
+    
+    # If no manifest, check for dazzlelinks
+    used_dazzlelinks = False
+    if not manifest and options['use_dazzlelinks']:
+        try:
+            # First check if dazzlelink is available
+            try:
+                from .dazzlelink import find_dazzlelinks_in_dir, dazzlelink_to_manifest, is_available
+                if not is_available():
+                    logger.warning("Dazzlelink integration not available")
+                    # Continue with no manifest and no dazzlelinks
+                else:
+                    # Search for dazzlelinks
+                    dazzlelinks = find_dazzlelinks_in_dir(source_directory, recursive=True)
+                    if dazzlelinks:
+                        # Convert dazzlelinks to a manifest structure
+                        manifest_data = dazzlelink_to_manifest(dazzlelinks)
+                        if manifest_data and 'files' in manifest_data and manifest_data['files']:
+                            # Create a manifest from the dazzlelink data
+                            manifest = PreserveManifest()
+                            # Replace the default manifest data with our converted data
+                            manifest.manifest = manifest_data
+                            logger.info(f"Created manifest from {len(dazzlelinks)} dazzlelinks")
+                            used_dazzlelinks = True
+                        else:
+                            logger.warning("No valid file information found in dazzlelinks")
+                    else:
+                        logger.warning(f"No dazzlelinks found in {source_directory}")
+            except ImportError:
+                logger.warning("Dazzlelink module not available")
+        except Exception as e:
+            logger.error(f"Error using dazzlelinks: {e}")
+    
+    # If we still don't have a manifest, we can't continue
+    if not manifest:
+        logger.error(f"No manifest or dazzlelinks found in {source_directory}")
+        result.add_failure("", "", "No manifest or dazzlelinks found")
         return result
     
     # Create new operation in manifest
@@ -739,26 +1185,107 @@ def restore_operation(
             continue
         
         # During restore, the destination is now the source
-        current_path = Path(dest_orig_path)
-        original_path = Path(source_orig_path)
+        # If we created the manifest from dazzlelinks, the source and destination are swapped
+        if used_dazzlelinks:
+            current_path = Path(str(source_orig_path).replace('\\', '/'))  # From dazzlelink, this is the original path
+            original_path = Path(str(source_orig_path).replace('\\', '/'))  # Restore to the same path
+            print(f"RESTORE DEBUG (dazzlelink): current={current_path}, original={original_path}")
+        else:
+            # Normal manifest case
+            current_path = Path(str(dest_orig_path).replace('\\', '/'))
+            original_path = Path(str(source_orig_path).replace('\\', '/'))
+            print(f"RESTORE DEBUG (manifest): current={current_path}, original={original_path}")
+        
+        # Make absolute if needed but avoid double-prefixing with source_dir_path
+        if not current_path.is_absolute():
+            # We need to resolve the current path against the source directory
+            # while avoiding double-prefixing of paths
+            try:
+                # Convert to string for consistent handling
+                current_path_str = str(current_path)
+                source_dir_str = str(source_dir_path)
+                source_dir_name = Path(source_dir_path).name
+                
+                print(f"RESTORE DEBUG: Processing path: {current_path_str}, source dir: {source_dir_str}, source dir name: {source_dir_name}")
+                
+                # Check if the current_path already includes source_dir_path
+                if current_path_str.startswith(source_dir_str):
+                    # Already includes the source_dir, don't add it again
+                    print(f"RESTORE DEBUG: Path already includes source directory, using as is: {current_path}")
+                else:
+                    # First try to find the source directory name in the path
+                    path_parts = current_path_str.split('\\')
+                    
+                    # Try to detect if this path already contains the destination directory name
+                    # This is more generic than the hardcoded 'dst2' approach
+                    if source_dir_name in path_parts:
+                        # Find the index of the source directory name in the path
+                        dir_index = path_parts.index(source_dir_name)
+                        if dir_index + 1 < len(path_parts):
+                            # Keep only the part after the source directory name
+                            relevant_path = '\\'.join(path_parts[dir_index+1:])
+                            current_path = source_dir_path / relevant_path
+                            print(f"RESTORE DEBUG: Extracted path after {source_dir_name}: {current_path}")
+                        else:
+                            # Just use the source_dir as is if there's nothing after it
+                            current_path = source_dir_path
+                            print(f"RESTORE DEBUG: Using source directory as is: {current_path}")
+                    else:
+                        # Check for any known destination directory names that might be in the path
+                        # This handles the case where the destination folder name is not the same as source_dir_name
+                        known_dest_dirs = ['dst', 'dst2', 'dst3', 'dest', 'destination', 'backup', 'archive']
+                        found_dir = False
+                        
+                        for dest_dir in known_dest_dirs:
+                            if dest_dir in path_parts:
+                                dir_index = path_parts.index(dest_dir)
+                                if dir_index + 1 < len(path_parts):
+                                    # Keep only the part after the known destination directory
+                                    relevant_path = '\\'.join(path_parts[dir_index+1:])
+                                    current_path = source_dir_path / relevant_path
+                                    print(f"RESTORE DEBUG: Extracted path after known directory {dest_dir}: {current_path}")
+                                    found_dir = True
+                                    break
+                        
+                        # If no known directory pattern found, just append to source directory
+                        if not found_dir:
+                            current_path = source_dir_path / current_path
+                            print(f"RESTORE DEBUG: No known directory pattern found, appending to source directory: {current_path}")
+                                
+            except Exception as e:
+                # In case of any errors, fall back to the original behavior
+                print(f"RESTORE DEBUG: Error processing path, using default resolution: {e}")
+                current_path = source_dir_path / current_path
+                
+            print(f"RESTORE DEBUG: Final current_path: {current_path}")
         
         # Check if current path exists
+        print(f"RESTORE DEBUG: Checking current_path: {current_path}, exists: {current_path.exists()}")
         if not current_path.exists():
-            result.add_skip(str(current_path), str(original_path), "Source file does not exist")
+            skip_reason = f"Source file does not exist: {current_path}"
+            print(f"RESTORE DEBUG: SKIPPING - {skip_reason}")
+            result.add_skip(str(current_path), str(original_path), skip_reason)
             continue
         
         # Check if original path's parent directory exists
+        print(f"RESTORE DEBUG: Attempting to restore {current_path} to {original_path}")
+        
         if not original_path.parent.exists():
             try:
                 # Create parent directory
+                logger.debug(f"[DEBUG] RESTORE: Creating parent directory: {original_path.parent}")
                 original_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception as e:
+                logger.error(f"[DEBUG] RESTORE: Error creating parent directory: {e}")
                 result.add_failure(str(current_path), str(original_path), f"Error creating parent directory: {e}")
                 continue
         
         # Check if original path exists and overwrite is not enabled
+        print(f"RESTORE DEBUG: Checking original_path: {original_path}, exists: {original_path.exists()}, overwrite: {options['overwrite']}")
         if original_path.exists() and not options['overwrite']:
-            result.add_skip(str(current_path), str(original_path), "Destination exists and overwrite not enabled")
+            skip_reason = f"Destination exists and overwrite not enabled: {original_path}"
+            print(f"RESTORE DEBUG: SKIPPING - {skip_reason}")
+            result.add_skip(str(current_path), str(original_path), skip_reason)
             continue
         
         # In dry run mode, just log what would be done
@@ -798,8 +1325,8 @@ def restore_operation(
             logger.error(f"Error restoring {current_path} to {original_path}: {e}")
             result.add_failure(str(current_path), str(original_path), str(e))
     
-    # Update manifest
-    if not options['dry_run']:
+    # Update manifest if it came from a file (not from dazzlelinks)
+    if not options['dry_run'] and manifest_path and not used_dazzlelinks:
         try:
             manifest.save(manifest_path)
         except Exception as e:
@@ -814,7 +1341,11 @@ def restore_operation(
 def _create_dazzlelink(
     source_path: Union[str, Path],
     dest_path: Union[str, Path],
-    dazzlelink_dir: Optional[Union[str, Path]] = None
+    dazzlelink_dir: Optional[Union[str, Path]] = None,
+    path_style: str = 'relative',
+    dest_base: Optional[Union[str, Path]] = None,
+    mode: str = 'info',  # Default execution mode
+    options: Optional[Dict[str, Any]] = None  # Optional settings including all_source_files
 ) -> bool:
     """
     Create a dazzlelink from destination to source.
@@ -823,6 +1354,8 @@ def _create_dazzlelink(
         source_path: Original source path
         dest_path: Destination path
         dazzlelink_dir: Directory for dazzlelinks (optional)
+        path_style: Path preservation style ('relative', 'absolute', 'flat')
+        dest_base: Base destination directory
         
     Returns:
         True if successful, False otherwise
@@ -830,26 +1363,45 @@ def _create_dazzlelink(
     try:
         # Check if dazzlelink module is available
         try:
-            import dazzlelink
+            from .dazzlelink import create_dazzlelink, is_available
+            if not is_available():
+                logger.warning("Dazzlelink integration not available, skipping dazzlelink creation")
+                return False
         except ImportError:
             logger.warning("Dazzlelink module not available, skipping dazzlelink creation")
             return False
         
-        # Determine link path
-        link_path = None
-        if dazzlelink_dir:
-            # Create relative path in dazzlelink_dir
-            dazzle_dir = Path(dazzlelink_dir)
-            dazzle_dir.mkdir(parents=True, exist_ok=True)
-            link_path = dazzle_dir / Path(dest_path).name
-        else:
-            # Create link alongside destination
-            link_path = Path(str(dest_path) + '.dazzlelink')
-        
         # Create the link
-        dazzlelink.core.create_link(str(source_path), str(link_path))
-        logger.debug(f"Created dazzlelink: {link_path} -> {source_path}")
-        return True
+        logger.debug(f"[DEBUG] Calling create_dazzlelink with source_path={source_path}, dest_path={dest_path}, dazzlelink_dir={dazzlelink_dir}, path_style={path_style}, dest_base={dest_base}")
+        
+        # If we have all_source_files in options, pass them for context
+        all_source_files = None
+        if options and 'all_source_files' in options:
+            all_source_files = options.get('all_source_files')
+            logger.debug(f"[DEBUG] Passing {len(all_source_files)} source files for context")
+        
+        link_path = create_dazzlelink(
+            source_path=str(source_path), 
+            dest_path=str(dest_path), 
+            dazzlelink_dir=dazzlelink_dir,
+            path_style=path_style,
+            dest_base=dest_base,
+            mode=mode,
+            all_source_files=all_source_files,  # Pass source files for path pattern detection
+            options=options  # Also pass the options dictionary for any other settings
+        )
+        
+        if link_path:
+            logger.debug(f"[DEBUG] Created dazzlelink: {link_path} -> {source_path}")
+            # Check if link_path has the correct extension
+            if not str(link_path).endswith('.dazzlelink'):
+                logger.warning(f"[DEBUG] WARNING: Created dazzlelink file doesn't have .dazzlelink extension: {link_path}")
+            else:
+                logger.debug(f"[DEBUG] Confirmed dazzlelink file has correct .dazzlelink extension: {link_path}")
+            return True
+        else:
+            logger.warning(f"[DEBUG] Failed to create dazzlelink for {dest_path}")
+            return False
         
     except Exception as e:
         logger.error(f"Error creating dazzlelink: {e}")
@@ -871,6 +1423,8 @@ def _generate_verification_report(
         True if successful, False otherwise
     """
     try:
+        import datetime
+        
         report_path = Path(report_path)
         report_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -896,10 +1450,13 @@ def _generate_verification_report(
                 f.write(f"---------------\n")
                 for path, details in result.unverified:
                     f.write(f"File: {path}\n")
-                    for algorithm, (match, expected, actual) in details.items():
-                        f.write(f"  {algorithm}:\n")
-                        f.write(f"    Expected: {expected}\n")
-                        f.write(f"    Actual: {actual}\n")
+                    if details:
+                        for algorithm, (match, expected, actual) in details.items():
+                            f.write(f"  {algorithm}:\n")
+                            f.write(f"    Expected: {expected}\n")
+                            f.write(f"    Actual: {actual}\n")
+                    else:
+                        f.write(f"  No hash details available\n")
                     f.write("\n")
             
             if result.failed:

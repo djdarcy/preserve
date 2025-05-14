@@ -14,13 +14,8 @@ __version__ = "0.1.0"
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Create console handler if not already present
-if not logger.handlers:
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(
-        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    )
-    logger.addHandler(console_handler)
+# Don't add handlers here - they will be configured by preserve.py's setup_logging
+# We'll let the root logger handle output to avoid duplication
 
 # Import core functionality
 from .preserve import main
