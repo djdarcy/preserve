@@ -1,8 +1,15 @@
-# Project dependencies
-# Add your dependencies here
+# Base requirements
+pathlib>=1.0.1
 
-# Development dependencies
+# Optional requirements
+# dazzlelink>=0.1.0  # Uncomment to enable dazzlelink integration
+
+# Windows-specific requirements (optional)
+# pywin32>=223; platform_system=="Windows"  # Uncomment for better Windows support
+
+# Development requirements
 pytest>=7.0.0
-black>=23.0.0
-flake8>=6.0.0
+pytest-cov>=3.0.0
+black>=22.0.0
+flake8>=4.0.0
 mypy>=1.0.0

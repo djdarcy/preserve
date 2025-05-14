@@ -138,3 +138,7 @@ credentials.json
 #######################
 
 # Add custom patterns below
+
+**/__private__*
+/revisions/
+
