@@ -29,7 +29,7 @@ For full functionality on Windows, install with the Windows extras:
 pip install preserve[windows]
 ```
 
-For dazzlelink integration:
+For [dazzlelink](https://github.com/djdarcy/dazzlelink) integration:
 
 ```bash
 pip install preserve[dazzlelink]
@@ -82,7 +82,7 @@ See `preserve --help` for full documentation and examples.
 
 ## Recommended Workflow
 
-For critical data, we recommend following a secure multi-step workflow:
+For critical data, it's recommended to follow a secure multi-step workflow:
 
 1. **Pre-Verification**: Analyze and hash source files
 2. **Copy with Structure**: Use `--rel --includeBase` to maintain directory structure
@@ -109,4 +109,10 @@ See the documentation for more details on secure workflows.
 
 ## License
 
-MIT
+preserve, aka preserve.py, Copyright (C) 2025 Dustin Darcy
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not, see http://www.gnu.org/licenses/.
