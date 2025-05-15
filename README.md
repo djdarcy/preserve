@@ -39,7 +39,13 @@ pip install preserve[dazzlelink]
 
 ### Basic Usage
 
-Copy files with relative path preservation:
+Copy files with relative path preservation (from a file list):
+
+```bash
+preserve COPY --loadIncludes "files-to-copy.txt" --dst "e:/backup" --rel --dazzlelink --includeBase
+```
+
+Or (search the source directory for files):,
 
 ```bash
 preserve COPY --glob "*.txt" --srchPath "c:/data" --rel --dst "e:/backup"
