@@ -413,7 +413,7 @@ def copy_operation(
                             if count >= len(all_files) * 0.75:
                                 # Ensure it's not just the root or a shallow directory
                                 if (sys.platform == 'win32' and parts > 1) or (sys.platform != 'win32' and parts > 1):
-                                    logger.info(f"[DEBUG PATH] Selected common parent directory: {parent_path} ({coverage_pct:.1f}% coverage)")
+                                    logger.debug(f"[DEBUG PATH] Selected common parent directory: {parent_path} ({coverage_pct:.1f}% coverage)")
                                     source_base = parent_path
                                     logger.info(f"Using common parent directory for relative paths: {source_base}")
                                     break
@@ -640,22 +640,22 @@ def copy_operation(
                 
             # Enhanced debug output for path resolution in relative mode
             if options['path_style'] == 'relative':
-                logger.info(f"[DEBUG PATH] Relative path resolution results for {source_path}:")
-                logger.info(f"[DEBUG PATH]   - Source path: {source_path}")
-                logger.info(f"[DEBUG PATH]   - Source base: {source_base}")
-                logger.info(f"[DEBUG PATH]   - Destination path: {dest_path}")
-                logger.info(f"[DEBUG PATH]   - Source path components: {list(Path(source_path).parts)}")
+                logger.debug(f"[DEBUG PATH] Relative path resolution results for {source_path}:")
+                logger.debug(f"[DEBUG PATH]   - Source path: {source_path}")
+                logger.debug(f"[DEBUG PATH]   - Source base: {source_base}")
+                logger.debug(f"[DEBUG PATH]   - Destination path: {dest_path}")
+                logger.debug(f"[DEBUG PATH]   - Source path components: {list(Path(source_path).parts)}")
                 if 'dest_path' in locals():
                     try:
                         rel_structure = list(Path(dest_path).relative_to(dest_base_path).parts)
-                        logger.info(f"[DEBUG PATH]   - Resulting subdirectory structure: {rel_structure}")
-                        logger.info(f"[DEBUG PATH]   - Subdirectory depth preserved: {len(rel_structure) > 0}")
+                        logger.debug(f"[DEBUG PATH]   - Resulting subdirectory structure: {rel_structure}")
+                        logger.debug(f"[DEBUG PATH]   - Subdirectory depth preserved: {len(rel_structure) > 0}")
                     except ValueError:
-                        logger.info(f"[DEBUG PATH]   - Could not determine relative structure to {dest_base_path}")
+                        logger.debug(f"[DEBUG PATH]   - Could not determine relative structure to {dest_base_path}")
                     # Additional detail about the destination path
-                    logger.info(f"[DEBUG PATH]   - Destination exists: {Path(dest_path).exists()}")
-                    logger.info(f"[DEBUG PATH]   - Destination parent: {Path(dest_path).parent}")
-                    logger.info(f"[DEBUG PATH]   - Destination parent exists: {Path(dest_path).parent.exists()}")
+                    logger.debug(f"[DEBUG PATH]   - Destination exists: {Path(dest_path).exists()}")
+                    logger.debug(f"[DEBUG PATH]   - Destination parent: {Path(dest_path).parent}")
+                    logger.debug(f"[DEBUG PATH]   - Destination parent exists: {Path(dest_path).parent.exists()}")
                 else:
                     logger.warning(f"[DEBUG PATH]   - No destination path was set!")
             

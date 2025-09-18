@@ -1,5 +1,6 @@
 # Base requirements
 pathlib>=1.0.1
+colorama>=0.4.0  # For colored terminal output on Windows and Unix
 
 # Optional requirements
 # dazzlelink>=0.1.0  # Uncomment to enable dazzlelink integration

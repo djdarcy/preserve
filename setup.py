@@ -22,6 +22,7 @@ setup(
     install_requires=[
         # Base requirements
         "pathlib",
+        "colorama>=0.4.0",  # For colored terminal output
     ],
     extras_require={
         "dazzlelink": ["dazzlelink>=0.5.0"],

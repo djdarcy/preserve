@@ -17,23 +17,29 @@ Operations:
     CONFIG             View or modify configuration settings
     
 Examples:
-    # Copy files matching a glob pattern with relative paths
-    preserve COPY --glob "*.txt" --srchPath "c:/data" --rel --dst "e:/backup"
-    
-    # Copy files with a specific structure, including hashes
-    preserve COPY --glob "*.jpg" --srchPath "d:/photos" --hash SHA256 --dst "e:/archive"
-    
+    # Copy all files from a directory (most common usage)
+    preserve COPY "C:/source/dir" --recursive --dst "D:/backup" --includeBase
+    preserve COPY "C:/source/dir" -r --rel --dst "D:/backup"  # With relative paths
+
+    # Copy files matching a glob pattern
+    preserve COPY --glob "*.txt" --srchPath "C:/data" --rel --dst "E:/backup"
+
+    # Copy with hash verification
+    preserve COPY --glob "*.jpg" --srchPath "D:/photos" --hash SHA256 --dst "E:/archive"
+
     # Move files with absolute path preservation
-    preserve MOVE --glob "*.docx" --srchPath "c:/old" --abs --dst "d:/new"
-    
-    # Verify files in destination against sources
-    preserve VERIFY --dst "e:/backup"
-    
-    # Restore files to original locations
-    preserve RESTORE --src "e:/backup" --force
-    
+    preserve MOVE --glob "*.docx" --srchPath "C:/old" --abs --dst "D:/new"
+
     # Load a list of files to copy from a text file
-    preserve COPY --loadIncludes "files_to_copy.txt" --dst "e:/backup"
+    preserve COPY --loadIncludes "files_to_copy.txt" --dst "E:/backup"
+
+    # Verify files in destination against sources
+    preserve VERIFY --dst "E:/backup"
+
+    # Restore files to original locations
+    preserve RESTORE --src "E:/backup" --force
+
+Note: For detailed help on each operation, use: preserve COPY --help
 """
 
 import os
@@ -47,6 +53,24 @@ import platform
 from pathlib import Path
 import importlib
 from typing import List, Dict, Any, Optional, Union, Tuple
+
+# Try to import colorama for colored output
+try:
+    from colorama import init, Fore, Style
+    init(autoreset=True)  # Initialize colorama for Windows support
+    HAVE_COLOR = True
+except ImportError:
+    HAVE_COLOR = False
+    # Define dummy color constants if colorama not available
+    class Fore:
+        RED = ''
+        YELLOW = ''
+        GREEN = ''
+        CYAN = ''
+        RESET = ''
+    class Style:
+        BRIGHT = ''
+        RESET_ALL = ''
 
 # print("--- preserve.py ---")
 # print(f"Current working directory: {os.getcwd()}")
@@ -99,17 +123,50 @@ def setup_logging(args):
         log_level = logging.DEBUG
     elif args.quiet:
         log_level = logging.WARNING
-    
+
     # Get the root logger
     root_logger = logging.getLogger()
-    
+
     # Remove all existing handlers from the root logger
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    
+
     # Configure console handler for root logger
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+    # Use simpler format for normal output, detailed format for verbose
+    if args.verbose:
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    else:
+        # Simple format with colors for normal output
+        class ColoredFormatter(logging.Formatter):
+            def format(self, record):
+                # Disable colors if --no-color flag is set
+                use_color = HAVE_COLOR and not getattr(args, 'no_color', False)
+
+                if record.levelno == logging.INFO:
+                    # INFO messages - no prefix, no color (clean output)
+                    return record.getMessage()
+                elif record.levelno == logging.WARNING:
+                    if use_color:
+                        return f"{Fore.YELLOW}{record.getMessage()}{Style.RESET_ALL}"
+                    else:
+                        return record.getMessage()
+                elif record.levelno == logging.ERROR:
+                    if use_color:
+                        return f"{Fore.RED}{record.getMessage()}{Style.RESET_ALL}"
+                    else:
+                        return record.getMessage()
+                elif record.levelno == logging.DEBUG:
+                    if use_color:
+                        return f"{Fore.CYAN}DEBUG: {record.getMessage()}{Style.RESET_ALL}"
+                    else:
+                        return f"DEBUG: {record.getMessage()}"
+                else:
+                    return f"{record.levelname}: {record.getMessage()}"
+
+        console_handler.setFormatter(ColoredFormatter())
+
     console_handler.setLevel(log_level)
     root_logger.addHandler(console_handler)
     root_logger.setLevel(log_level)
@@ -164,7 +221,27 @@ def create_parser():
     subparsers = parser.add_subparsers(dest='operation', help='Operation to perform')
     
     # === COPY operation ===
-    copy_parser = subparsers.add_parser('COPY', help='Copy files to destination with path preservation')
+    copy_parser = subparsers.add_parser('COPY',
+                                       help='Copy files to destination with path preservation',
+                                       description='''Copy files to destination with path preservation.
+
+Common usage patterns:
+
+1. Copy all files from a directory (most common):
+   preserve COPY "C:\\source\\dir" --recursive --dst "D:\\backup" --includeBase
+
+2. Copy with relative path structure:
+   preserve COPY "C:\\source\\dir" -r --rel --dst "D:\\backup"
+
+3. Copy with absolute path structure:
+   preserve COPY "C:\\source\\dir" -r --abs --dst "D:\\backup"
+
+4. Copy files flat (no subdirectories):
+   preserve COPY "C:\\source\\dir" -r --flat --dst "D:\\backup"
+
+Note: When copying directories, --recursive (-r) is required to include files in subdirectories.
+      Most users also want --includeBase to preserve the source directory name.''',
+                                       formatter_class=argparse.RawDescriptionHelpFormatter)
     _add_source_args(copy_parser)
     _add_destination_args(copy_parser)
     _add_path_args(copy_parser)
@@ -178,7 +255,28 @@ def create_parser():
                             help='Do not preserve file attributes')
     
     # === MOVE operation ===
-    move_parser = subparsers.add_parser('MOVE', help='Copy files then remove originals after verification')
+    move_parser = subparsers.add_parser('MOVE',
+                                       help='Copy files then remove originals after verification',
+                                       description='''Move files to destination (copy then delete originals after verification).
+
+Common usage patterns:
+
+1. Move all files from a directory (most common):
+   preserve MOVE "C:\\source\\dir" --recursive --dst "D:\\new-location" --includeBase
+
+2. Move with relative path structure:
+   preserve MOVE "C:\\source\\dir" -r --rel --dst "D:\\new-location"
+
+3. Move with absolute path structure:
+   preserve MOVE "C:\\source\\dir" -r --abs --dst "D:\\new-location"
+
+4. Move files flat (no subdirectories):
+   preserve MOVE "C:\\source\\dir" -r --flat --dst "D:\\new-location"
+
+Note: When moving directories, --recursive (-r) is required to include files in subdirectories.
+      Most users also want --includeBase to preserve the source directory name.
+      Files are only deleted from source after successful verification.''',
+                                       formatter_class=argparse.RawDescriptionHelpFormatter)
     _add_source_args(move_parser)
     _add_destination_args(move_parser)
     _add_path_args(move_parser)
@@ -534,19 +632,88 @@ def get_dazzlelink_dir(args, preserve_dir):
     dl_dir.mkdir(parents=True, exist_ok=True)
     return dl_dir
 
+def _show_directory_help_message(args, logger, src, operation="COPY", is_warning=False):
+    """Show helpful message when directory is used without --recursive flag.
+
+    Args:
+        args: Command arguments
+        logger: Logger instance
+        src: Source directory path
+        operation: Operation type (COPY or MOVE)
+        is_warning: If True, show as warning. If False, show as error.
+    """
+    # Use generic destination in examples to avoid exposing real paths
+    example_dst = "D:\\backup" if "\\" in str(args.dst) else "/backup"
+
+    log_func = logger.warning if is_warning else logger.error
+    action = "copied" if operation == "COPY" else "moved"
+
+    if is_warning:
+        log_func("")
+        log_func(f"WARNING: '{src}' contains subdirectories with files that will NOT be {action}.")
+        log_func("         Use --recursive flag to include files from subdirectories.")
+    else:
+        log_func("No source files found")
+        log_func("")
+        log_func(f"ERROR: '{src}' is a directory but --recursive flag was not specified.")
+        log_func("       The directory may be empty or contain only subdirectories.")
+
+    log_func("")
+    log_func(f"To {operation.lower()} all files from a directory, use one of these commands:")
+    log_func(f'  preserve {operation} "{src}" --recursive --dst "{example_dst}"')
+    log_func(f'  preserve {operation} "{src}" -r --dst "{example_dst}"')
+    log_func("")
+    log_func("Additional options you may want:")
+    log_func("  --includeBase : Include the source directory name in the destination")
+    log_func("  --rel         : Preserve relative directory structure")
+    log_func("  --abs         : Preserve absolute directory structure")
+
+    if not is_warning:
+        log_func("  --flat        : Copy all files directly to destination (no subdirectories)")
+        log_func("")
+        log_func("Example with common options:")
+        log_func(f'  preserve {operation} "{src}" --recursive --rel --includeBase --dst "{example_dst}"')
+    else:
+        log_func("")
+
+
 def handle_copy_operation(args, logger):
     """Handle COPY operation"""
     logger.info("Starting COPY operation")
+
+    # Check for common issue: trailing backslash in source path on Windows
+    if args.sources and sys.platform == 'win32':
+        for src in args.sources:
+            # Check if the path looks like it might have eaten subsequent arguments
+            # (happens when trailing \ escapes the closing quote)
+            if '--' in src or src.count(' ') > 2:
+                logger.error("")
+                logger.error("ERROR: It appears the source path may have captured command-line arguments.")
+                logger.error("       This usually happens when a path ends with a backslash (\\) before a quote.")
+                logger.error("")
+                logger.error("Problem: The trailing backslash escapes the closing quote.")
+                logger.error("  Example: \"C:\\path\\to\\dir\\\" <- The \\ escapes the \"")
+                logger.error("")
+                logger.error("Solution: Remove the trailing backslash:")
+                logger.error("  Correct: \"C:\\path\\to\\dir\"")
+                logger.error("  Or use:  C:\\path\\to\\dir (without quotes if no spaces)")
+                return 1
+            elif src.endswith('\\'):
+                logger.warning("")
+                logger.warning(f"WARNING: Source path has a trailing backslash: '{src}'")
+                logger.warning("         This can cause issues on Windows command line.")
+                logger.warning("         Consider removing it: '{}'".format(src[:-1]))
     
     # Early debug info for path style
     path_style = get_path_style(args)
     if path_style == 'relative':
-        print(f"\nUsing RELATIVE path style for COPY operation")
+        logger.info("")
+        logger.info("Using RELATIVE path style for COPY operation")
         if args.srchPath:
-            print(f"  Source base directory: {args.srchPath[0]}")
+            logger.info(f"  Source base directory: {args.srchPath[0]}")
         else:
-            print(f"  No explicit source base directory provided")
-            print(f"  Will attempt to find a common base directory for all files")
+            logger.info("  No explicit source base directory provided")
+            logger.info("  Will attempt to find a common base directory for all files")
             
             # Find the longest common path prefix for files in --rel mode
             if args.loadIncludes:
@@ -621,25 +788,51 @@ def handle_copy_operation(args, logger):
                     # Find the common prefix
                     common_prefix = find_longest_common_path_prefix(file_lines)
                     if common_prefix:
-                        print(f"  Found common path prefix: {common_prefix}")
-                        print(f"  Will use this as base directory for relative paths")
+                        logger.info(f"  Found common path prefix: {common_prefix}")
+                        logger.info(f"  Will use this as base directory for relative paths")
                         # Store in global options to be used later
                         args.common_prefix = common_prefix
                     else:
-                        print(f"  No common path prefix found among input files")
-                        print(f"  Will use nearest common parent directories when possible")
+                        logger.info(f"  No common path prefix found among input files")
+                        logger.info(f"  Will use nearest common parent directories when possible")
                 except Exception as e:
                     logger.debug(f"Error analyzing include file: {e}")
         
         include_base = args.includeBase if hasattr(args, 'includeBase') else False
-        print(f"  Include base directory name: {include_base}")
-    
+        logger.info(f"  Include base directory name: {include_base}")
+        logger.info("")  # Add blank line for better readability
+
     # Find source files
     source_files = find_files_from_args(args)
+
+    # Check if user provided a directory without --recursive and it has subdirectories
+    # Only show warning if we found SOME files (but are missing subdirectory files)
+    if source_files and args.sources and not args.recursive:
+        for src in args.sources:
+            src_path = Path(src)
+            if src_path.exists() and src_path.is_dir():
+                # Check if there are subdirectories with files
+                has_subdirs_with_files = False
+                for root, dirs, files in os.walk(src_path):
+                    if root != str(src_path) and files:
+                        has_subdirs_with_files = True
+                        break
+
+                if has_subdirs_with_files:
+                    _show_directory_help_message(args, logger, src, operation="COPY", is_warning=True)
+
     if not source_files:
+        # Check if the user provided a directory without --recursive flag
+        if args.sources:
+            for src in args.sources:
+                src_path = Path(src)
+                if src_path.exists() and src_path.is_dir() and not args.recursive:
+                    _show_directory_help_message(args, logger, src, operation="COPY", is_warning=False)
+                    return 1
+
         logger.error("No source files found")
         return 1
-    
+
     logger.info(f"Found {len(source_files)} source files")
     
     # Get destination path
@@ -718,13 +911,61 @@ def handle_copy_operation(args, logger):
 def handle_move_operation(args, logger):
     """Handle MOVE operation"""
     logger.info("Starting MOVE operation")
-    
+
+    # Check for common issue: trailing backslash in source path on Windows
+    if args.sources and sys.platform == 'win32':
+        for src in args.sources:
+            # Check if the path looks like it might have eaten subsequent arguments
+            # (happens when trailing \ escapes the closing quote)
+            if '--' in src or src.count(' ') > 2:
+                logger.error("")
+                logger.error("ERROR: It appears the source path may have captured command-line arguments.")
+                logger.error("       This usually happens when a path ends with a backslash (\\) before a quote.")
+                logger.error("")
+                logger.error("Problem: The trailing backslash escapes the closing quote.")
+                logger.error("  Example: \"C:\\path\\to\\dir\\\" <- The \\ escapes the \"")
+                logger.error("")
+                logger.error("Solution: Remove the trailing backslash:")
+                logger.error("  Correct: \"C:\\path\\to\\dir\"")
+                logger.error("  Or use:  C:\\path\\to\\dir (without quotes if no spaces)")
+                return 1
+            elif src.endswith('\\'):
+                logger.warning("")
+                logger.warning(f"WARNING: Source path has a trailing backslash: '{src}'")
+                logger.warning("         This can cause issues on Windows command line.")
+                logger.warning("         Consider removing it: '{}'".format(src[:-1]))
+
     # Find source files
     source_files = find_files_from_args(args)
+
+    # Check if user provided a directory without --recursive and it has subdirectories
+    # Only show warning if we found SOME files (but are missing subdirectory files)
+    if source_files and args.sources and not args.recursive:
+        for src in args.sources:
+            src_path = Path(src)
+            if src_path.exists() and src_path.is_dir():
+                # Check if there are subdirectories with files
+                has_subdirs_with_files = False
+                for root, dirs, files in os.walk(src_path):
+                    if root != str(src_path) and files:
+                        has_subdirs_with_files = True
+                        break
+
+                if has_subdirs_with_files:
+                    _show_directory_help_message(args, logger, src, operation="MOVE", is_warning=True)
+
     if not source_files:
+        # Check if the user provided a directory without --recursive flag
+        if args.sources:
+            for src in args.sources:
+                src_path = Path(src)
+                if src_path.exists() and src_path.is_dir() and not args.recursive:
+                    _show_directory_help_message(args, logger, src, operation="MOVE", is_warning=False)
+                    return 1
+
         logger.error("No source files found")
         return 1
-    
+
     logger.info(f"Found {len(source_files)} source files")
     
     # Get destination path
