@@ -327,7 +327,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
     def create_test_manifest(self, path, number, file_count=2):
         """Create a test manifest with specified number of files."""
         manifest_data = {
-            "version": "1.0",
+            "manifest_version": 1,
             "operation": "COPY",
             "timestamp": f"2024-01-0{number}T12:00:00",
             "files": {}
@@ -405,6 +405,8 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         mock_result.skip_count.return_value = 0
         mock_result.skipped = []  # Empty list of skipped files
         mock_result.error_messages = {}
+        mock_result.verified_count.return_value = 0
+        mock_result.unverified_count.return_value = 0
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:
@@ -452,6 +454,8 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         mock_result.skip_count.return_value = 0
         mock_result.skipped = []  # Empty list of skipped files
         mock_result.error_messages = {}
+        mock_result.verified_count.return_value = 0
+        mock_result.unverified_count.return_value = 0
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:

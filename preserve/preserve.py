@@ -87,7 +87,8 @@ from . import utils
 
 # Import preservelib package
 import preservelib
-from preservelib import operations, manifest, metadata, restore
+from preservelib import operations, metadata, restore, verification
+from preservelib.manifest import PreserveManifest, find_available_manifests
 #from preservelib.config import get_config
 
 # Check for dazzlelink integration
@@ -294,9 +295,13 @@ Note: When moving directories, --recursive (-r) is required to include files in 
     verify_parser = subparsers.add_parser('VERIFY', help='Verify files against sources or stored hashes')
     verify_parser.add_argument('--src', help='Source location to verify against (if not specified, uses manifest)')
     verify_parser.add_argument('--dst', required=True, help='Destination location to verify')
-    verify_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'], 
+    verify_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'],
                               help='Hash algorithm(s) to use for verification (can specify multiple)')
     verify_parser.add_argument('--manifest', help='Manifest file to use for verification')
+    verify_parser.add_argument('--manifest-number', '--number', '-n', type=int, dest='manifest_number',
+                              help='Select specific manifest by number (e.g., -n 2 for preserve_manifest_002.json)')
+    verify_parser.add_argument('--list', action='store_true',
+                              help='List available manifests and exit')
     verify_parser.add_argument('--report', help='Write verification report to specified file')
     verify_parser.add_argument('--use-dazzlelinks', action='store_true',
                               help='Use dazzlelinks for verification if no manifest is found')
@@ -633,31 +638,7 @@ def get_manifest_path(args, preserve_dir):
     # and no numbered manifests exist
     return dest / 'preserve_manifest_002.json'
 
-def find_available_manifests(source_path):
-    """Find all manifest files with their metadata.
-
-    Returns a list of tuples: (number, path, description)
-    where number is 0 for unnumbered manifest, or the actual number for numbered ones.
-    """
-    manifests = []
-    source = Path(source_path)
-
-    # Check for single manifest
-    single = source / 'preserve_manifest.json'
-    if single.exists():
-        manifests.append((0, single, None))
-
-    # Find numbered manifests
-    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__(.*))?\.json')
-    for file in source.glob('preserve_manifest_*.json'):
-        match = pattern.match(file.name)
-        if match:
-            num = int(match.group(1))
-            desc = match.group(2) if match.group(2) else None
-            manifests.append((num, file, desc))
-
-    # Sort by number (0 for single manifest comes first, then numbered)
-    return sorted(manifests, key=lambda x: x[0] if x[0] > 0 else 999999)
+# Function moved to preservelib.manifest for better organization
 
 def get_dazzlelink_dir(args, preserve_dir):
     """
@@ -1134,7 +1115,7 @@ def handle_verify_operation(args, logger):
     if manifest_path and manifest_path.exists():
         try:
             # Just verify the manifest exists and is valid
-            test_man = manifest.PreserveManifest(manifest_path)
+            test_man = PreserveManifest(manifest_path)
             logger.info(f"Found valid manifest at {manifest_path}")
         except Exception as e:
             logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")
@@ -1150,7 +1131,7 @@ def handle_verify_operation(args, logger):
         for path in potential_manifests:
             if path.exists():
                 try:
-                    test_man = manifest.PreserveManifest(path)
+                    test_man = PreserveManifest(path)
                     manifest_path = path
                     logger.info(f"Found valid manifest at {manifest_path}")
                     break
@@ -1252,7 +1233,7 @@ def handle_restore_operation(args, logger):
         for num, path, desc in manifests:
             try:
                 # Load manifest to get metadata
-                test_man = manifest.PreserveManifest(path)
+                test_man = PreserveManifest(path)
                 created = test_man.manifest.get('created_at', 'Unknown')
                 file_count = len(test_man.manifest.get('files', {}))
 
@@ -1318,7 +1299,7 @@ def handle_restore_operation(args, logger):
     if manifest_path and manifest_path.exists():
         try:
             # Just verify the manifest exists and is valid
-            test_man = manifest.PreserveManifest(manifest_path)
+            test_man = PreserveManifest(manifest_path)
             logger.info(f"Found valid manifest at {manifest_path}")
         except Exception as e:
             logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")

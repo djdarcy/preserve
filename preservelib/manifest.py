@@ -584,7 +584,43 @@ def verify_file_hash(file_path: Union[str, Path], expected_hashes: Dict[str, str
     return all_match, results
 
 
-def create_manifest_for_path(path: Union[str, Path], dest_dir: Union[str, Path], 
+def find_available_manifests(source_path: Union[str, Path]) -> List[Tuple[int, Path, Optional[str]]]:
+    """Find all manifest files with their metadata.
+
+    Returns a list of tuples: (number, path, description)
+    where number is 0 for unnumbered manifest, or the actual number for numbered ones.
+
+    Args:
+        source_path: Directory to search for manifests
+
+    Returns:
+        List of tuples containing (manifest_number, manifest_path, description)
+        Sorted by number (0 for single manifest comes first, then numbered)
+    """
+    import re
+
+    manifests = []
+    source = Path(source_path)
+
+    # Check for single manifest
+    single = source / 'preserve_manifest.json'
+    if single.exists():
+        manifests.append((0, single, None))
+
+    # Find numbered manifests
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__(.*))?\.json')
+    for file in source.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            num = int(match.group(1))
+            desc = match.group(2) if match.group(2) else None
+            manifests.append((num, file, desc))
+
+    # Sort by number (0 for single manifest comes first, then numbered)
+    return sorted(manifests, key=lambda x: x[0])
+
+
+def create_manifest_for_path(path: Union[str, Path], dest_dir: Union[str, Path],
                            recursive: bool = True, operation_type: str = "COPY",
                            command_line: Optional[str] = None,
                            options: Optional[Dict[str, Any]] = None) -> PreserveManifest:
