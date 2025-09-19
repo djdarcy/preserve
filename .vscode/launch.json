@@ -5,41 +5,109 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Preserve: COPY (dry-run)",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "COPY",
+                "--loadIncludes", "private/files-to-copy.txt",
+                "--dst", "./private/dst-debug",
+                "--rel",
+                "--includeBase",
+                "--dry-run"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Preserve: COPY directory",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "COPY",
+                "./tests/test_data",
+                "-r",
+                "--dst", "./private/dst-debug",
+                "--rel",
+                "--includeBase"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Preserve: RESTORE --list",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "RESTORE",
+                "--src", "./private/dst-debug",
+                "--list"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Preserve: RESTORE (dry-run)",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "RESTORE",
+                "--src", "./private/dst-debug",
+                "--dry-run"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Preserve: VERIFY",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "VERIFY",
+                "--dst", "./private/dst-debug",
+                "--hash", "SHA256"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Preserve: CONFIG VIEW",
+            "type": "python",
+            "request": "launch",
+            "module": "preserve.preserve",
+            "args": [
+                "CONFIG",
+                "VIEW"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false
         },
         {
-            "name": "Python: Module",
+            "name": "Python: Run Tests",
             "type": "python",
             "request": "launch",
-            "module": "preserve",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "Python: Current File with Arguments",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
+            "module": "unittest",
             "args": [
-                // Add your arguments here
-                // Examples:
-                // "--input", "${workspaceFolder}/data/input.txt",
-                // "--output", "${workspaceFolder}/data/output.txt",
-                // Use VS Code's input picker to add arguments at runtime
-                "${command:pickArgs}"
-            ]
-        }
-    ],
-    "compounds": [
-        {
-            "name": "Server/Client",
-            "configurations": ["Python: Module", "Python: Current File"]
+                "discover",
+                "-s", "tests",
+                "-p", "test_*.py",
+                "-v"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }

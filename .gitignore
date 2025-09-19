@@ -141,4 +141,5 @@ credentials.json
 
 **/__private__*
 /revisions/
+/test-runs/
 

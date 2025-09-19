@@ -50,6 +50,7 @@ import json
 import datetime
 import time
 import platform
+import re
 from pathlib import Path
 import importlib
 from typing import List, Dict, Any, Optional, Union, Tuple
@@ -318,6 +319,10 @@ Note: When moving directories, --recursive (-r) is required to include files in 
                                help='Use dazzlelinks for restoration if no manifest is found')
     restore_parser.add_argument('--no-dazzlelinks', action='store_true',
                                help='Do not use dazzlelinks for restoration')
+    restore_parser.add_argument('--list', action='store_true',
+                               help='List available restore points')
+    restore_parser.add_argument('--number', '-n', type=int,
+                               help='Restore from specific operation number')
     
     # === CONFIG operation ===
     config_parser = subparsers.add_parser('CONFIG', help='View or modify configuration settings')
@@ -570,17 +575,89 @@ def get_preserve_dir(args, dest_path):
     return None
 
 def get_manifest_path(args, preserve_dir):
-    """Get manifest file path"""
+    """Get manifest file path with sequential numbering support.
+
+    This function implements a smart naming system:
+    - First operation: creates preserve_manifest.json (backward compatible)
+    - Second operation: renames first to _001, creates _002
+    - Subsequent: creates _003, _004, etc.
+    - Supports user descriptions: preserve_manifest_001__description.json
+    """
     if args.no_manifest:
         return None
-    
+
     if args.manifest:
         return Path(args.manifest)
-    
-    if preserve_dir:
-        return preserve_dir / 'preserve_manifest.json'
-    
-    return Path(args.dst) / 'preserve_manifest.json'
+
+    # Determine destination directory
+    dest = preserve_dir if preserve_dir else Path(args.dst)
+    single_manifest = dest / 'preserve_manifest.json'
+
+    # Check if single manifest exists
+    if single_manifest.exists():
+        # Check if we also have numbered manifests
+        numbered = list(dest.glob('preserve_manifest_[0-9][0-9][0-9]*.json'))
+        if not numbered:
+            # This is the second operation - migrate the single manifest
+            new_001 = dest / 'preserve_manifest_001.json'
+            print(f"Migrating {single_manifest.name} to {new_001.name}")
+            try:
+                single_manifest.rename(new_001)
+                logger = logging.getLogger(__name__)
+                logger.info(f"Migrated existing manifest to {new_001.name}")
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to migrate manifest: {e}")
+                # Fall back to creating _002 anyway
+            return dest / 'preserve_manifest_002.json'
+
+    # Look for existing numbered manifests
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__.*)?\.json')
+    existing_numbers = []
+
+    for file in dest.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            existing_numbers.append(int(match.group(1)))
+
+    # If no manifests exist at all, create the simple one
+    if not existing_numbers and not single_manifest.exists():
+        return single_manifest
+
+    # Find the next sequential number
+    if existing_numbers:
+        next_num = max(existing_numbers) + 1
+        return dest / f'preserve_manifest_{next_num:03d}.json'
+
+    # Edge case: single manifest exists but couldn't be migrated
+    # and no numbered manifests exist
+    return dest / 'preserve_manifest_002.json'
+
+def find_available_manifests(source_path):
+    """Find all manifest files with their metadata.
+
+    Returns a list of tuples: (number, path, description)
+    where number is 0 for unnumbered manifest, or the actual number for numbered ones.
+    """
+    manifests = []
+    source = Path(source_path)
+
+    # Check for single manifest
+    single = source / 'preserve_manifest.json'
+    if single.exists():
+        manifests.append((0, single, None))
+
+    # Find numbered manifests
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__(.*))?\.json')
+    for file in source.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            num = int(match.group(1))
+            desc = match.group(2) if match.group(2) else None
+            manifests.append((num, file, desc))
+
+    # Sort by number (0 for single manifest comes first, then numbered)
+    return sorted(manifests, key=lambda x: x[0] if x[0] > 0 else 999999)
 
 def get_dazzlelink_dir(args, preserve_dir):
     """
@@ -1148,37 +1225,94 @@ def handle_verify_operation(args, logger):
     return 0 if result.unverified_count() == 0 and result.failure_count() == 0 else 1
 
 def handle_restore_operation(args, logger):
-    """Handle RESTORE operation"""
+    """Handle RESTORE operation with support for multiple manifests"""
     logger.info("Starting RESTORE operation")
     logger.debug(f"[DEBUG] RESTORE called with args: {args}")
-    
+
     # Get source path
     source_path = Path(args.src)
     if not source_path.exists():
         logger.error(f"Source directory does not exist: {source_path}")
         return 1
-        
+
     # Warning about hardcoded paths in the code
     source_name = source_path.name
     if source_name != 'dst2' and 'dst2' in str(source_path):
         print(f"\nNOTE: You're running RESTORE on directory '{source_name}', but the code might have some ")
         print(f"references to 'dst2'. If you encounter issues, please report this.")
-    
-    # Get manifest path
-    manifest_path = Path(args.manifest) if args.manifest else None
-    
-    if not manifest_path:
-        # Try to find manifest in common locations
-        potential_manifests = [
-            source_path / '.preserve' / 'manifest.json',
-            source_path / '.preserve' / 'preserve_manifest.json',
-            source_path / 'preserve_manifest.json'
-        ]
-        
-        for path in potential_manifests:
-            if path.exists():
+
+    # Handle --list option to show available manifests
+    if hasattr(args, 'list') and args.list:
+        manifests = find_available_manifests(source_path)
+        if not manifests:
+            print("No manifests found in source directory")
+            return 1
+
+        print("Available restore points:")
+        for num, path, desc in manifests:
+            try:
+                # Load manifest to get metadata
+                test_man = manifest.PreserveManifest(path)
+                created = test_man.manifest.get('created_at', 'Unknown')
+                file_count = len(test_man.manifest.get('files', {}))
+
+                if num == 0:
+                    print(f"  [Single] {path.name} ({created}, {file_count} files)")
+                else:
+                    desc_str = f" - {desc}" if desc else ""
+                    print(f"  {num}. {path.name}{desc_str} ({created}, {file_count} files)")
+            except Exception as e:
+                logger.debug(f"Could not read manifest {path}: {e}")
+                if num == 0:
+                    print(f"  [Single] {path.name} (unreadable)")
+                else:
+                    print(f"  {num}. {path.name} (unreadable)")
+
+        print("\nUse --number N or -n N to restore from a specific operation")
+        print("Use --manifest FILENAME to specify a manifest file directly")
+        return 0
+
+    # Select manifest based on user options
+    manifest_path = None
+
+    if args.manifest:
+        # User specified manifest directly
+        manifest_path = Path(args.manifest)
+        if not manifest_path.is_absolute():
+            # Try relative to source directory
+            test_path = source_path / args.manifest
+            if test_path.exists():
+                manifest_path = test_path
+    elif hasattr(args, 'number') and args.number:
+        # User specified by number
+        manifests = find_available_manifests(source_path)
+        for num, path, desc in manifests:
+            if num == args.number:
                 manifest_path = path
+                logger.info(f"Selected manifest #{num}: {path.name}")
                 break
+        else:
+            logger.error(f"No manifest found with number {args.number}")
+            return 1
+    else:
+        # Default: use the latest (highest numbered) manifest
+        manifests = find_available_manifests(source_path)
+        if manifests:
+            # Take the last one (highest number)
+            manifest_path = manifests[-1][1]
+            logger.info(f"Using latest manifest: {manifest_path.name}")
+        else:
+            # Fall back to old logic for compatibility
+            potential_manifests = [
+                source_path / '.preserve' / 'manifest.json',
+                source_path / '.preserve' / 'preserve_manifest.json',
+                source_path / 'preserve_manifest.json'
+            ]
+
+            for path in potential_manifests:
+                if path.exists():
+                    manifest_path = path
+                    break
     
     # Check for manifest
     if manifest_path and manifest_path.exists():

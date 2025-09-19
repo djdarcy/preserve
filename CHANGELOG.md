@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. This projec
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Critical**: Fixed manifest overwriting bug when multiple operations target the same destination (#4)
+- Directory operations without --recursive flag now show helpful error messages
+
+### Added
+- Sequential manifest numbering system (preserve_manifest_001.json, _002, etc.)
+- RESTORE --list option to show all available restore points
+- RESTORE --number/-n option to restore from specific operation
+- Support for user descriptions in manifest filenames (e.g., _001__description.json)
+- Colored terminal output for warnings and errors (with graceful fallback)
+- Auto-migration of existing single manifests to numbered format
+
+### Improved
+- RESTORE command now defaults to latest manifest when multiple exist
+- Help text for COPY/MOVE operations with common usage examples
+- Error messages for Windows path escaping issues
+
 ## [0.2.1] - 2025-05-14
 
 ### Fixed

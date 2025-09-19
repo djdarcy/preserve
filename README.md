@@ -12,7 +12,7 @@ A cross-platform file preservation tool with path normalization and verification
   - Flat structure with all files in one directory (`--flat`)
 - **Verification**: File integrity verification with multiple hash algorithms (MD5, SHA1, SHA256, SHA512)
 - **Metadata**: Preserve file attributes (timestamps, permissions, etc.)
-- **Manifests**: Detailed operation tracking for auditing and reversibility
+- **Manifests**: Detailed operation tracking with automatic versioning for multiple operations
 - **Restoration**: Restore files to their original locations with verification
 - **DazzleLink**: Optional integration with dazzlelink for enhanced metadata storage and file references
 - **Cross-Platform**: Works on Windows, Linux, and macOS
@@ -66,6 +66,16 @@ preserve VERIFY --src "c:/original" --dst "e:/backup" --hash SHA256
 Restore files to their original locations:
 
 ```bash
+# Restore latest operation (default)
+preserve RESTORE --src "e:/backup"
+
+# List all available restore points
+preserve RESTORE --src "e:/backup" --list
+
+# Restore specific operation by number
+preserve RESTORE --src "e:/backup" --number 1
+
+# Force overwrite during restore
 preserve RESTORE --src "e:/backup" --force
 ```
 
@@ -85,6 +95,72 @@ preserve RESTORE --src "e:/backup" --force
 - `--overwrite`: Overwrite existing files in destination
 
 See `preserve --help` for full documentation and examples.
+
+## Working with Multiple Operations
+
+Preserve automatically manages manifests when you run multiple operations to the same destination:
+
+### Sequential Operations Example
+
+```bash
+# First operation - copies dataset A
+preserve COPY "C:/data/dataset-A" -r --includeBase --rel --dst "E:/backup"
+# Creates: preserve_manifest.json
+
+# Second operation - copies dataset B
+preserve COPY "C:/data/dataset-B" -r --includeBase --rel --dst "E:/backup"
+# Auto-migrates first manifest to preserve_manifest_001.json
+# Creates: preserve_manifest_002.json
+
+# Third operation - copies dataset C
+preserve COPY "C:/data/dataset-C" -r --includeBase --rel --dst "E:/backup"
+# Creates: preserve_manifest_003.json
+```
+
+### Managing Multiple Manifests
+
+```bash
+# List all available restore points
+preserve RESTORE --src "E:/backup" --list
+# Output:
+#   1. preserve_manifest_001.json (2025-09-18 14:30:00, 150 files)
+#   2. preserve_manifest_002.json (2025-09-18 14:55:00, 75 files)
+#   3. preserve_manifest_003.json (2025-09-18 15:20:00, 200 files)
+
+# Restore specific dataset (e.g., dataset B from operation 2)
+preserve RESTORE --src "E:/backup" --number 2
+
+# Restore latest operation (dataset C)
+preserve RESTORE --src "E:/backup"
+
+# Restore with short option
+preserve RESTORE --src "E:/backup" -n 1  # Restores dataset A
+```
+
+### User-Friendly Manifest Naming
+
+You can rename manifests to include descriptions:
+
+```bash
+# Rename manifests for clarity (Windows)
+ren preserve_manifest_001.json preserve_manifest_001__dataset-A.json
+ren preserve_manifest_002.json preserve_manifest_002__dataset-B.json
+
+# On Linux/Mac
+mv preserve_manifest_001.json preserve_manifest_001__dataset-A.json
+
+# The descriptions appear in --list output:
+preserve RESTORE --src "E:/backup" --list
+#   1. preserve_manifest_001__dataset-A.json - dataset-A (2025-09-18 14:30:00, 150 files)
+#   2. preserve_manifest_002__dataset-B.json - dataset-B (2025-09-18 14:55:00, 75 files)
+```
+
+### Important Notes
+
+- **No Overwrites**: Each operation creates a new manifest, preserving all history
+- **Backward Compatible**: Single operations still work exactly as before
+- **Auto-Migration**: The system automatically handles the transition from single to multiple manifests
+- **Independent Restoration**: Each manifest can be restored independently
 
 ## Recommended Workflow
 
