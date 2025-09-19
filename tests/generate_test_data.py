@@ -23,9 +23,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestDataGenerator:
     """Generate test data for preserve operations."""
 
-    def __init__(self, base_dir="test-runs"):
+    def __init__(self, base_dir=None):
         """Initialize the test data generator."""
-        self.base_dir = Path(base_dir)
+        if base_dir is None:
+            # Default to project root/test-runs, not relative to tests directory
+            project_root = Path(__file__).parent.parent
+            self.base_dir = project_root / "test-runs"
+        else:
+            self.base_dir = Path(base_dir)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.test_dir = self.base_dir / f"test_{self.timestamp}"
 
@@ -325,8 +330,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate test data for preserve")
     parser.add_argument(
         "--base-dir",
-        default="test-runs",
-        help="Base directory for test data (default: test-runs)"
+        default=None,
+        help="Base directory for test data (default: project_root/test-runs)"
     )
     parser.add_argument(
         "--keep-last",

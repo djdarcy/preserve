@@ -220,7 +220,7 @@ class TestFileVerification(unittest.TestCase):
     @patch('preservelib.verification.calculate_file_hash')
     def test_verify_file_success(self, mock_hash):
         """Test successful file verification."""
-        mock_hash.return_value = "abc123"
+        mock_hash.return_value = {"SHA256": "abc123"}
 
         manifest_entry = {
             "hashes": {"SHA256": "abc123"}
@@ -239,7 +239,7 @@ class TestFileVerification(unittest.TestCase):
     @patch('preservelib.verification.calculate_file_hash')
     def test_verify_file_hash_mismatch(self, mock_hash):
         """Test file verification with hash mismatch."""
-        mock_hash.return_value = "xyz789"
+        mock_hash.return_value = {"SHA256": "xyz789"}
 
         manifest_entry = {
             "hashes": {"SHA256": "abc123"}
@@ -292,7 +292,7 @@ class TestFileVerification(unittest.TestCase):
         }
 
         with patch('preservelib.verification.calculate_file_hash') as mock_hash:
-            mock_hash.return_value = "abc123"
+            mock_hash.return_value = {"SHA256": "abc123"}
 
             result = verify_file_against_manifest(
                 file_path=self.test_file,
@@ -362,6 +362,8 @@ class TestThreeWayVerification(unittest.TestCase):
         )
 
         self.assertEqual(file_result.status, VerificationStatus.ERROR)
+        # categorize_difference doesn't add to errors list anymore, caller must use add_result
+        result.add_result(file_result)
         self.assertEqual(len(result.errors), 1)
         self.assertIn("Complex difference", file_result.error_message)
 

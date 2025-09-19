@@ -1,8 +1,8 @@
-# Preserve (v0.2.1)
+# Preserve (v0.3.0)
 
 A cross-platform file preservation tool with path normalization and verification.
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/username/preserve/releases/tag/v0.2.1)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/username/preserve/releases/tag/v0.3.0)
 
 ## Features
 
@@ -173,6 +173,14 @@ For critical data, it's recommended to follow a secure multi-step workflow:
 5. **Source Cleanup**: Only remove originals after verification passes
 
 See the documentation for more details on secure workflows.
+
+## What's New in v0.3.0
+
+- **Three-Way Verification**: Added `--verify` flag to RESTORE operation for comprehensive verification before restoration
+- **Numbered Manifest Support**: VERIFY command now fully supports the numbered manifest system (_001, _002, etc.)
+- **Architecture Improvements**: Clarified ownership of hashing functions - preservelib owns the main implementation
+- **Enhanced Help System**: Improved command documentation and examples
+- **Bug Fixes**: Fixed path resolution issues in verification, corrected double-adding to result lists
 
 ## What's New in v0.2.1
 

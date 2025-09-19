@@ -18,46 +18,54 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_file_hash(
-    file_path: Union[str, Path], 
-    algorithms: List[str] = None, 
-    buffer_size: int = 65536
+    file_path: Union[str, Path],
+    algorithms: List[str] = None,
+    buffer_size: int = 65536,
+    preserve_case: bool = True
 ) -> Dict[str, str]:
     """
     Calculate hash values for a file using one or more algorithms.
-    
+
+    This is the core implementation used by both filetoolkit and preservelib.
+
     Args:
         file_path: Path to the file
         algorithms: List of hash algorithms to use (default: ['SHA256'])
         buffer_size: Size of the buffer for reading the file in chunks
-            
+        preserve_case: If True, preserve the case of algorithm names in output
+
     Returns:
         Dictionary mapping algorithm names to hash values
     """
     if algorithms is None:
         algorithms = ['SHA256']
-    
+
     path_obj = Path(file_path)
     if not path_obj.exists() or not path_obj.is_file():
         logger.warning(f"Cannot calculate hash for non-existent file: {path_obj}")
         return {}
-    
+
     result = {}
     hash_objects = {}
-    
-    # Initialize hash objects
+
+    # Initialize hash objects - store with original case for preserve_case option
     for algorithm in algorithms:
-        alg = algorithm.upper()
-        if alg == 'MD5':
-            hash_objects[alg] = hashlib.md5()
-        elif alg == 'SHA1':
-            hash_objects[alg] = hashlib.sha1()
-        elif alg == 'SHA256':
-            hash_objects[alg] = hashlib.sha256()
-        elif alg == 'SHA512':
-            hash_objects[alg] = hashlib.sha512()
+        alg_normalized = algorithm.upper()
+        if alg_normalized == 'MD5':
+            hash_objects[algorithm] = hashlib.md5()
+        elif alg_normalized == 'SHA1':
+            hash_objects[algorithm] = hashlib.sha1()
+        elif alg_normalized == 'SHA256':
+            hash_objects[algorithm] = hashlib.sha256()
+        elif alg_normalized == 'SHA512':
+            hash_objects[algorithm] = hashlib.sha512()
         else:
             logger.warning(f"Unsupported hash algorithm: {algorithm}")
-    
+            continue
+
+    if not hash_objects:
+        return {}
+
     try:
         # Read file in chunks and update all hash objects
         with open(path_obj, 'rb') as f:
@@ -67,16 +75,17 @@ def calculate_file_hash(
                     break
                 for hash_obj in hash_objects.values():
                     hash_obj.update(data)
-        
-        # Get hash values
+
+        # Get hash values - use original algorithm name casing if preserve_case
         for algorithm, hash_obj in hash_objects.items():
-            result[algorithm] = hash_obj.hexdigest()
-        
+            key = algorithm if preserve_case else algorithm.upper()
+            result[key] = hash_obj.hexdigest()
+
         logger.debug(f"Successfully calculated hashes for {path_obj}")
-        
+
     except Exception as e:
         logger.error(f"Error calculating hash for {path_obj}: {e}")
-    
+
     return result
 
 

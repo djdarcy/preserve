@@ -44,7 +44,7 @@ from .restore import (
     find_restoreable_files
 )
 
-__version__ = '0.2.1'
+__version__ = '0.3.0'
 
 def configure_logging(level=logging.INFO, log_file=None):
     """

@@ -13,8 +13,13 @@ from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
-from filetoolkit.verification import calculate_file_hash, verify_file_hash
-from .manifest import PreserveManifest, find_available_manifests
+# Use preservelib's extended versions when inside preservelib
+from .manifest import (
+    PreserveManifest,
+    find_available_manifests,
+    calculate_file_hash,
+    verify_file_hash
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +92,31 @@ class VerificationResult:
     def is_successful(self) -> bool:
         """Check if all verifications were successful."""
         return len(self.failed) == 0 and len(self.errors) == 0 and len(self.not_found) == 0
+
+    @property
+    def verified_count(self) -> int:
+        """Number of successfully verified files."""
+        return len(self.verified)
+
+    @property
+    def failed_count(self) -> int:
+        """Number of files that failed verification."""
+        return len(self.failed)
+
+    @property
+    def missing_count(self) -> int:
+        """Number of files that were not found."""
+        return len(self.not_found)
+
+    @property
+    def failed_files(self) -> List[Path]:
+        """List of paths for failed files."""
+        return [r.file_path for r in self.failed]
+
+    @property
+    def missing_files(self) -> List[Path]:
+        """List of paths for missing files."""
+        return [r.file_path for r in self.not_found]
 
     def get_summary(self) -> Dict[str, int]:
         """Get summary statistics."""
@@ -201,7 +231,8 @@ def verify_file_against_manifest(
             continue
 
         try:
-            actual_hash = calculate_file_hash(str(file_path), algorithm)
+            actual_hashes = calculate_file_hash(str(file_path), [algorithm])
+            actual_hash = actual_hashes.get(algorithm, "")
 
             if actual_hash.lower() == expected_hash.lower():
                 return FileVerificationResult(
@@ -257,22 +288,27 @@ def verify_files_against_manifest(
     result = VerificationResult()
 
     # Get files from manifest
-    files = manifest.get_files()
+    files = manifest.manifest.get("files", {})
     total_files = len(files)
 
-    for index, (relative_path, file_info) in enumerate(files.items()):
+    for index, (file_key, file_info) in enumerate(files.items()):
         # Report progress if callback provided
         if progress_callback:
-            progress_callback(index, total_files, relative_path)
+            progress_callback(index, total_files, file_key)
 
-        # Build full path
-        file_path = destination / relative_path
+        # Get the destination path from manifest
+        dest_path = file_info.get("destination_path", file_key)
+        file_path = Path(dest_path)
+
+        # Make path absolute if it isn't already
+        if not file_path.is_absolute():
+            file_path = file_path.resolve()
 
         # Verify file
         file_result = verify_file_against_manifest(
             file_path=file_path,
             manifest_entry=file_info,
-            base_path=destination,
+            base_path=destination,  # Still pass destination for any edge cases
             hash_algorithms=hash_algorithms
         )
 
@@ -280,11 +316,11 @@ def verify_files_against_manifest(
 
         # Log result
         if file_result.is_verified:
-            logger.debug(f"Verified: {relative_path}")
+            logger.debug(f"Verified: {file_key}")
         elif file_result.is_failed:
-            logger.warning(f"Verification failed: {relative_path} - {file_result.error_message}")
+            logger.warning(f"Verification failed: {file_key} - {file_result.error_message}")
         else:
-            logger.debug(f"{file_result.status.value}: {relative_path}")
+            logger.debug(f"{file_result.status.value}: {file_key}")
 
     # Final progress callback
     if progress_callback:
@@ -328,6 +364,8 @@ def find_and_verify_manifest(
     # Load manifest
     try:
         manifest = PreserveManifest(selected_manifest)
+        # Store the path for later use
+        manifest.manifest_path = selected_manifest
         logger.info(f"Loaded manifest from {selected_manifest}")
     except Exception as e:
         logger.error(f"Failed to load manifest: {e}")
@@ -363,6 +401,7 @@ class ThreeWayVerificationResult(VerificationResult):
         Categorize the difference between three hashes.
 
         Returns a FileVerificationResult with appropriate status and details.
+        Note: Only adds to specialized lists, caller must call add_result for base tracking.
         """
         # All three match
         if source_hash == preserved_hash == manifest_hash:
@@ -406,7 +445,7 @@ class ThreeWayVerificationResult(VerificationResult):
             expected_hash=manifest_hash,
             error_message=f"Complex difference: source={source_hash}, preserved={preserved_hash}, manifest={manifest_hash}"
         )
-        self.errors.append(result)
+        # Note: NOT adding to self.errors here - let add_result handle it
         return result
 
 
@@ -420,7 +459,10 @@ def verify_three_way(
     """
     Perform three-way verification between source, preserved, and manifest.
 
-    This function will be fully implemented for Issue #11.
+    This function compares files across three locations:
+    - Original source files
+    - Preserved/backup files
+    - Expected hashes from manifest
 
     Args:
         source_path: Original source directory
@@ -434,7 +476,124 @@ def verify_three_way(
     """
     result = ThreeWayVerificationResult()
 
-    # TODO: Implementation for Issue #11
-    logger.info("Three-way verification not yet implemented")
+    # Get files from manifest
+    files = manifest.manifest.get("files", {})
+    total_files = len(files)
+
+    # Use first available hash algorithm from manifest if not specified
+    if not hash_algorithms and files:
+        first_file = next(iter(files.values()))
+        available_algos = list(first_file.get("hashes", {}).keys())
+        if available_algos:
+            hash_algorithms = [available_algos[0]]
+        else:
+            hash_algorithms = ["SHA256"]  # Default fallback
+
+    for index, (file_key, file_info) in enumerate(files.items()):
+        # Report progress if callback provided
+        if progress_callback:
+            progress_callback(index, total_files, file_key)
+
+        # Get paths from manifest
+        source_file_path = Path(file_info.get("source_path", ""))
+        preserved_file_path = Path(file_info.get("destination_path", file_key))
+
+        # Make paths absolute if needed
+        if not source_file_path.is_absolute():
+            source_file_path = source_file_path.resolve()
+        if not preserved_file_path.is_absolute():
+            preserved_file_path = preserved_file_path.resolve()
+
+        # Get expected hash from manifest
+        expected_hashes = file_info.get("hashes", {})
+        if not expected_hashes:
+            # Try old format
+            if 'hash' in file_info and 'hash_algorithm' in file_info:
+                expected_hashes = {file_info['hash_algorithm']: file_info['hash']}
+
+        if not expected_hashes:
+            file_result = FileVerificationResult(
+                file_path=preserved_file_path,
+                status=VerificationStatus.SKIPPED,
+                error_message="No hash information in manifest"
+            )
+            result.add_result(file_result)
+            continue
+
+        # Use the first matching algorithm
+        algorithm = None
+        manifest_hash = None
+        for algo in hash_algorithms:
+            if algo in expected_hashes:
+                algorithm = algo
+                manifest_hash = expected_hashes[algo]
+                break
+
+        if not algorithm:
+            file_result = FileVerificationResult(
+                file_path=preserved_file_path,
+                status=VerificationStatus.SKIPPED,
+                error_message="No matching hash algorithm found"
+            )
+            result.add_result(file_result)
+            continue
+
+        # Calculate hashes for source and preserved files
+        source_hash = None
+        preserved_hash = None
+
+        # Check source file
+        if source_file_path.exists():
+            try:
+                source_hashes = calculate_file_hash(str(source_file_path), [algorithm])
+                source_hash = source_hashes.get(algorithm, "")
+            except Exception as e:
+                logger.debug(f"Could not hash source file {source_file_path}: {e}")
+        else:
+            logger.debug(f"Source file not found: {source_file_path}")
+
+        # Check preserved file
+        if preserved_file_path.exists():
+            try:
+                preserved_hashes = calculate_file_hash(str(preserved_file_path), [algorithm])
+                preserved_hash = preserved_hashes.get(algorithm, "")
+            except Exception as e:
+                logger.debug(f"Could not hash preserved file {preserved_file_path}: {e}")
+        else:
+            # Preserved file missing
+            file_result = FileVerificationResult(
+                file_path=preserved_file_path,
+                status=VerificationStatus.NOT_FOUND,
+                error_message=f"Preserved file not found: {preserved_file_path}"
+            )
+            result.add_result(file_result)  # add_result already adds to not_found list
+            continue
+
+        # Categorize the difference
+        file_result = result.categorize_difference(
+            source_hash=source_hash,
+            preserved_hash=preserved_hash,
+            manifest_hash=manifest_hash,
+            file_path=preserved_file_path
+        )
+
+        # Set hash algorithm and values for the result
+        file_result.hash_algorithm = algorithm
+        file_result.expected_hash = manifest_hash
+        file_result.actual_hash = preserved_hash
+
+        # categorize_difference adds to specialized lists but not via add_result
+        # We need to call add_result to update total counts
+        result.add_result(file_result)
+
+        # Log result
+        if file_result.status == VerificationStatus.VERIFIED:
+            logger.debug(f"Three-way match: {file_key}")
+        else:
+            logger.warning(f"Three-way difference for {file_key}: {file_result.error_message}")
+
+    # Final progress callback
+    if progress_callback:
+        progress_callback(total_files, total_files, "Complete")
 
     return result

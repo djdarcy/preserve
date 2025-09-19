@@ -116,7 +116,7 @@ import filetoolkit
 from filetoolkit import paths, operations as file_ops, verification
 
 # Version information
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 def setup_logging(args):
     """Set up logging based on verbosity level"""
@@ -203,8 +203,9 @@ def setup_logging(args):
 def create_parser():
     """Create argument parser with all CLI options"""
     parser = argparse.ArgumentParser(
-        description='Preserve files with path normalization and verification',
-        epilog=__doc__,
+        prog='preserve',
+        description='Preserve v0.3.0 - Cross-platform file preservation with verification and restoration',
+        epilog='For detailed command help: preserve [COMMAND] --help\n\n' + __doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
@@ -292,42 +293,67 @@ Note: When moving directories, --recursive (-r) is required to include files in 
                             help='Force removal of source files even if verification fails')
     
     # === VERIFY operation ===
-    verify_parser = subparsers.add_parser('VERIFY', help='Verify files against sources or stored hashes')
-    verify_parser.add_argument('--src', help='Source location to verify against (if not specified, uses manifest)')
-    verify_parser.add_argument('--dst', required=True, help='Destination location to verify')
+    verify_parser = subparsers.add_parser('VERIFY',
+                                          help='Check integrity of preserved files against their manifest hashes',
+                                          description='Verify that preserved files have not been corrupted or modified since preservation. '
+                                                     'Compares current file hashes against those recorded in the manifest. '
+                                                     'Does NOT check original source files unless --src is specified.',
+                                          epilog='Examples:\n'
+                                                '  Verify latest preservation:      preserve VERIFY --dst /backup/data\n'
+                                                '  Verify specific manifest:        preserve VERIFY --dst /backup/data -n 2\n'
+                                                '  List available manifests:        preserve VERIFY --dst /backup/data --list\n'
+                                                '  Compare against source:          preserve VERIFY --src /original --dst /backup\n'
+                                                '  Generate verification report:    preserve VERIFY --dst /backup --report verify.txt',
+                                          formatter_class=argparse.RawDescriptionHelpFormatter)
+    verify_parser.add_argument('--src', help='Original source location to compare against (optional - compares preserved files vs source)')
+    verify_parser.add_argument('--dst', required=True, help='Path to preserved files directory containing manifest(s)')
     verify_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'],
-                              help='Hash algorithm(s) to use for verification (can specify multiple)')
-    verify_parser.add_argument('--manifest', help='Manifest file to use for verification')
+                              help='Hash algorithm(s) to use (can specify multiple, default: SHA256)')
+    verify_parser.add_argument('--manifest', help='Explicit path to manifest file (overrides automatic selection)')
     verify_parser.add_argument('--manifest-number', '--number', '-n', type=int, dest='manifest_number',
-                              help='Select specific manifest by number (e.g., -n 2 for preserve_manifest_002.json)')
+                              help='Select manifest by number (e.g., -n 2 for preserve_manifest_002.json)')
     verify_parser.add_argument('--list', action='store_true',
-                              help='List available manifests and exit')
-    verify_parser.add_argument('--report', help='Write verification report to specified file')
+                              help='Show all available manifests with details and exit')
+    verify_parser.add_argument('--report', help='Save detailed verification report to file')
     verify_parser.add_argument('--use-dazzlelinks', action='store_true',
                               help='Use dazzlelinks for verification if no manifest is found')
     verify_parser.add_argument('--no-dazzlelinks', action='store_true',
                               help='Do not use dazzlelinks for verification')
     
     # === RESTORE operation ===
-    restore_parser = subparsers.add_parser('RESTORE', help='Restore files to their original locations')
-    restore_parser.add_argument('--src', required=True, help='Source location containing preserved files')
-    restore_parser.add_argument('--manifest', help='Manifest file to use for restoration')
-    restore_parser.add_argument('--dry-run', action='store_true', 
-                               help='Show what would be done without making changes')
-    restore_parser.add_argument('--overwrite', action='store_true', 
-                               help='Overwrite existing files during restoration')
-    restore_parser.add_argument('--force', action='store_true', 
-                               help='Force restoration even if verification fails')
-    restore_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'], 
-                               help='Hash algorithm(s) to use for verification (can specify multiple)')
+    restore_parser = subparsers.add_parser('RESTORE',
+                                          help='Restore preserved files to their original locations',
+                                          description='Restore files from a preservation directory back to their original paths. '
+                                                     'Supports multiple preservation operations with numbered manifests. '
+                                                     'Use --verify for three-way verification before restoration.',
+                                          epilog='Examples:\n'
+                                                '  Restore latest operation:        preserve RESTORE --src /backup/data\n'
+                                                '  List available restore points:   preserve RESTORE --src /backup/data --list\n'
+                                                '  Restore specific operation:      preserve RESTORE --src /backup/data -n 2\n'
+                                                '  Verify before restore:           preserve RESTORE --src /backup/data --verify\n'
+                                                '  Force overwrite existing:        preserve RESTORE --src /backup/data --force',
+                                          formatter_class=argparse.RawDescriptionHelpFormatter)
+    restore_parser.add_argument('--src', required=True, help='Directory containing preserved files and manifest(s)')
+    restore_parser.add_argument('--manifest', help='Explicit path to manifest file (overrides automatic selection)')
+    restore_parser.add_argument('--dry-run', action='store_true',
+                               help='Show what would be restored without making changes')
+    restore_parser.add_argument('--overwrite', action='store_true',
+                               help='Overwrite existing files at destination (use with caution)')
+    restore_parser.add_argument('--force', action='store_true',
+                               help='Force restoration even if verification fails (bypasses --verify checks)')
+    restore_parser.add_argument('--hash', action='append', choices=['MD5', 'SHA1', 'SHA256', 'SHA512'],
+                               help='Hash algorithm(s) for verification (can specify multiple, default: SHA256)')
     restore_parser.add_argument('--use-dazzlelinks', action='store_true',
                                help='Use dazzlelinks for restoration if no manifest is found')
     restore_parser.add_argument('--no-dazzlelinks', action='store_true',
                                help='Do not use dazzlelinks for restoration')
     restore_parser.add_argument('--list', action='store_true',
-                               help='List available restore points')
+                               help='Show all available restore points with details and exit')
     restore_parser.add_argument('--number', '-n', type=int,
-                               help='Restore from specific operation number')
+                               help='Restore from specific operation number (e.g., -n 2 for second operation)')
+    restore_parser.add_argument('--verify', action='store_true',
+                               help='Perform three-way verification (source vs preserved vs manifest) before restoration. '
+                                    'Categorizes differences and prompts for confirmation if issues found.')
     
     # === CONFIG operation ===
     config_parser = subparsers.add_parser('CONFIG', help='View or modify configuration settings')
@@ -1093,117 +1119,113 @@ def handle_move_operation(args, logger):
                 (not options['verify'] or result.unverified_count() == 0)) else 1
 
 def handle_verify_operation(args, logger):
-    """Handle VERIFY operation"""
+    """Handle VERIFY operation using the new verification module"""
     logger.info("Starting VERIFY operation")
-    
+
+    # Import from the new verification module
+    from preservelib.verification import find_and_verify_manifest
+    from preservelib.manifest import find_available_manifests
+
     # Get destination path
     dest_path = Path(args.dst)
     if not dest_path.exists():
         logger.error(f"Destination directory does not exist: {dest_path}")
         return 1
-    
-    # Get source path if provided
-    source_path = Path(args.src) if args.src else None
-    
+
+    # Handle --list flag to show available manifests
+    if args.list:
+        manifests = find_available_manifests(dest_path)
+        if not manifests:
+            print("No preserve manifests found in destination.")
+            return 1
+
+        print(f"Available manifests in {dest_path}:")
+        for i, (manifest_num, manifest_path, description) in enumerate(manifests, 1):
+            # Try to get basic info from the manifest
+            try:
+                with open(manifest_path, 'r') as f:
+                    import json
+                    data = json.load(f)
+                    timestamp = data.get('timestamp', 'Unknown')
+                    file_count = len(data.get('files', {}))
+                    desc_str = f" ({description})" if description else ""
+                    print(f"  {i}. {manifest_path.name}{desc_str} - {file_count} files, created {timestamp}")
+            except Exception as e:
+                print(f"  {i}. {manifest_path.name} - (could not read)")
+        return 0
+
     # Get hash algorithms
     hash_algorithms = get_hash_algorithms(args)
-    
-    # Get manifest path
-    manifest_path = Path(args.manifest) if args.manifest else None
-    
-    # Check for manifest
-    if manifest_path and manifest_path.exists():
-        try:
-            # Just verify the manifest exists and is valid
-            test_man = PreserveManifest(manifest_path)
-            logger.info(f"Found valid manifest at {manifest_path}")
-        except Exception as e:
-            logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")
-            manifest_path = None
-    elif not manifest_path and not source_path:
-        # Try to find manifest in common locations
-        potential_manifests = [
-            dest_path / '.preserve' / 'manifest.json',
-            dest_path / '.preserve' / 'preserve_manifest.json',
-            dest_path / 'preserve_manifest.json'
-        ]
-        
-        for path in potential_manifests:
-            if path.exists():
-                try:
-                    test_man = PreserveManifest(path)
-                    manifest_path = path
-                    logger.info(f"Found valid manifest at {manifest_path}")
-                    break
-                except Exception as e:
-                    logger.warning(f"Found manifest at {path}, but it is invalid: {e}")
-    
-    # Determine dazzlelink usage
-    use_dazzlelinks = True  # Default is to use dazzlelinks if no manifest/source
-    if args.no_dazzlelinks:
-        use_dazzlelinks = False
-    elif args.use_dazzlelinks:
-        use_dazzlelinks = True
-    
-    # If no manifest/source and dazzlelinks disabled, report error
-    if not manifest_path and not source_path and not use_dazzlelinks:
-        logger.error("No source or manifest provided for verification, and dazzlelink usage is disabled")
-        logger.error("Use --use-dazzlelinks to enable verification using dazzlelinks")
+
+    # Get specific manifest if provided
+    manifest_path = None
+    if args.manifest:
+        manifest_path = Path(args.manifest)
+        if not manifest_path.exists():
+            logger.error(f"Specified manifest does not exist: {manifest_path}")
+            return 1
+
+    # Run verification using the new module
+    try:
+        manifest, result = find_and_verify_manifest(
+            destination=dest_path,
+            manifest_number=args.manifest_number if hasattr(args, 'manifest_number') else None,
+            manifest_path=manifest_path,
+            hash_algorithms=hash_algorithms
+        )
+
+        # Print summary
+        print("\nVERIFY Operation Summary:")
+        print(f"  Using manifest: {manifest.manifest_path.name if manifest else 'Unknown'}")
+        print(f"  Verified: {result.verified_count}")
+        print(f"  Failed: {result.failed_count}")
+        print(f"  Missing: {result.missing_count}")
+
+        # Print details if there are issues
+        if result.failed_files:
+            print("\nFailed files:")
+            for file in result.failed_files:
+                print(f"  - {file}")
+
+        if result.missing_files:
+            print("\nMissing files:")
+            for file in result.missing_files:
+                print(f"  - {file}")
+
+        # Handle report if requested
+        if hasattr(args, 'report') and args.report:
+            report_path = Path(args.report)
+            with open(report_path, 'w') as f:
+                f.write(f"Verification Report\n")
+                f.write(f"==================\n\n")
+                f.write(f"Manifest: {manifest.manifest_path.name if manifest else 'Unknown'}\n")
+                f.write(f"Timestamp: {datetime.now().isoformat()}\n\n")
+                f.write(f"Summary:\n")
+                f.write(f"  Verified: {result.verified_count}\n")
+                f.write(f"  Failed: {result.failed_count}\n")
+                f.write(f"  Missing: {result.missing_count}\n\n")
+
+                if result.failed_files:
+                    f.write("Failed Files:\n")
+                    for file in result.failed_files:
+                        f.write(f"  - {file}\n")
+                    f.write("\n")
+
+                if result.missing_files:
+                    f.write("Missing Files:\n")
+                    for file in result.missing_files:
+                        f.write(f"  - {file}\n")
+
+            print(f"\n  Report written to: {report_path}")
+
+        # Return success if all files verified
+        return 0 if result.is_successful else 1
+
+    except Exception as e:
+        logger.error(f"Verification failed: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
         return 1
-    
-    # Prepare operation options
-    options = {
-        'hash_algorithm': hash_algorithms[0],
-        'report_path': args.report if hasattr(args, 'report') else None,
-        'use_dazzlelinks': use_dazzlelinks,
-        'dest_directory': str(dest_path)  # For finding dazzlelinks
-    }
-    
-    # Collect source and destination files
-    source_files = []
-    dest_files = []
-    
-    if source_path:
-        # Use source and destination for verification
-        if source_path.is_dir() and dest_path.is_dir():
-            # Compare directories
-            for root, _, files in os.walk(source_path):
-                for file in files:
-                    src_file = Path(root) / file
-                    rel_path = src_file.relative_to(source_path)
-                    dst_file = dest_path / rel_path
-                    
-                    if dst_file.exists():
-                        source_files.append(src_file)
-                        dest_files.append(dst_file)
-        else:
-            # Compare individual files
-            source_files.append(source_path)
-            dest_files.append(dest_path)
-    
-    # Create command line for logging
-    command_line = f"preserve VERIFY {' '.join(sys.argv[2:])}"
-    
-    # Perform verification
-    result = operations.verify_operation(
-        source_files=source_files if source_files else None,
-        dest_files=dest_files if dest_files else None,
-        manifest_path=manifest_path,
-        options=options,
-        command_line=command_line
-    )
-    
-    # Print summary
-    print("\nVERIFY Operation Summary:")
-    print(f"  Verified: {result.verified_count()}")
-    print(f"  Unverified: {result.unverified_count()}")
-    print(f"  Failed: {result.failure_count()}")
-    
-    if options['report_path']:
-        print(f"  Report written to: {options['report_path']}")
-    
-    # Return success if all files verified
-    return 0 if result.unverified_count() == 0 and result.failure_count() == 0 else 1
 
 def handle_restore_operation(args, logger):
     """Handle RESTORE operation with support for multiple manifests"""
@@ -1336,7 +1358,93 @@ def handle_restore_operation(args, logger):
     
     # Create command line for logging
     command_line = f"preserve RESTORE {' '.join(sys.argv[2:])}"
-    
+
+    # Perform three-way verification if requested
+    if hasattr(args, 'verify') and args.verify and manifest_path:
+        logger.info("Performing three-way verification before restoration...")
+
+        # Load the manifest
+        try:
+            manifest = PreserveManifest(manifest_path)
+
+            # Get source directory from manifest's first file
+            files = manifest.manifest.get('files', {})
+            if files:
+                # Try to determine source directory from manifest entries
+                first_file_info = next(iter(files.values()))
+                source_orig_path = first_file_info.get('source_path', '')
+                if source_orig_path:
+                    source_orig = Path(source_orig_path)
+                    # Try to find common parent of source files
+                    if source_orig.is_absolute():
+                        # For absolute paths, we need to find the actual source
+                        logger.info(f"Source path from manifest: {source_orig}")
+                        # Check if parent directories exist
+                        possible_source = source_orig.parent
+                        while not possible_source.exists() and possible_source.parent != possible_source:
+                            possible_source = possible_source.parent
+                        if possible_source.exists():
+                            source_base = possible_source
+                        else:
+                            # Can't find source, skip three-way verification
+                            logger.warning("Cannot determine source directory for three-way verification")
+                            source_base = None
+                    else:
+                        # For relative paths, assume current directory
+                        source_base = Path.cwd()
+                else:
+                    source_base = None
+            else:
+                source_base = None
+
+            if source_base:
+                from preservelib.verification import verify_three_way
+
+                verification_result = verify_three_way(
+                    source_path=source_base,
+                    preserved_path=source_path,
+                    manifest=manifest,
+                    hash_algorithms=[options['hash_algorithm']]
+                )
+
+                # Report verification results
+                print("\nThree-way Verification Results:")
+                print(f"  All match: {len(verification_result.all_match)}")
+                print(f"  Source modified: {len(verification_result.source_modified)}")
+                print(f"  Preserved corrupted: {len(verification_result.preserved_corrupted)}")
+                print(f"  Errors: {len(verification_result.errors)}")
+                print(f"  Not found: {len(verification_result.not_found)}")
+
+                # Show details if there are issues
+                if verification_result.source_modified:
+                    print("\nFiles modified in source since preservation:")
+                    for result in verification_result.source_modified[:5]:
+                        print(f"  - {result.file_path}")
+                    if len(verification_result.source_modified) > 5:
+                        print(f"  ... and {len(verification_result.source_modified) - 5} more")
+
+                if verification_result.preserved_corrupted:
+                    print("\nCorrupted preserved files:")
+                    for result in verification_result.preserved_corrupted[:5]:
+                        print(f"  - {result.file_path}")
+                    if len(verification_result.preserved_corrupted) > 5:
+                        print(f"  ... and {len(verification_result.preserved_corrupted) - 5} more")
+
+                # Ask for confirmation if issues found
+                if not verification_result.is_successful and not options['force']:
+                    print("\nVerification found issues. Continue with restoration anyway? (use --force to skip this prompt)")
+                    response = input("Continue? [y/N]: ").strip().lower()
+                    if response != 'y':
+                        print("Restoration cancelled.")
+                        return 1
+            else:
+                logger.warning("Cannot perform three-way verification: source directory unknown")
+                print("\nWarning: Three-way verification skipped (source directory not found)")
+
+        except Exception as e:
+            logger.warning(f"Could not perform three-way verification: {e}")
+            print(f"\nWarning: Three-way verification failed: {e}")
+
     # Perform restoration
     result = operations.restore_operation(
         source_directory=source_path,

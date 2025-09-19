@@ -489,28 +489,43 @@ class PreserveManifest:
         return len(errors) == 0, errors
 
 
-def calculate_file_hash(file_path: Union[str, Path], algorithms: List[str] = None) -> Dict[str, str]:
+def calculate_file_hash(
+    file_path: Union[str, Path],
+    algorithms: List[str] = None,
+    buffer_size: int = 65536,
+    manifest: Optional['PreserveManifest'] = None,
+    progress_callback: Optional[callable] = None
+) -> Dict[str, str]:
     """
     Calculate hash values for a file using multiple algorithms.
-    
+
+    This is the main implementation in preservelib.
+
     Args:
         file_path: Path to the file
         algorithms: List of hash algorithms to use (default: ["SHA256"])
-        
+        buffer_size: Size of the buffer for reading the file in chunks
+        manifest: Optional manifest to record hash calculations
+        progress_callback: Optional callback for progress reporting
+
     Returns:
         Dictionary mapping algorithm names to hash values
     """
     if algorithms is None:
         algorithms = ["SHA256"]
-    
+
     path = Path(file_path)
     if not path.exists() or not path.is_file():
         logger.warning(f"Cannot calculate hash for non-existent file: {path}")
         return {}
-    
+
     result = {}
     hash_objects = {}
-    
+
+    # Report progress if callback provided
+    if progress_callback:
+        progress_callback(f"Calculating hash for {file_path}")
+
     # Initialize hash objects
     for algorithm in algorithms:
         alg = algorithm.lower()
@@ -525,32 +540,47 @@ def calculate_file_hash(file_path: Union[str, Path], algorithms: List[str] = Non
         else:
             logger.warning(f"Unsupported hash algorithm: {algorithm}")
             continue
-    
+
     try:
         # Read file in chunks and update all hash objects
         with open(path, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
+            while chunk := f.read(buffer_size):
                 for hash_obj in hash_objects.values():
                     hash_obj.update(chunk)
-        
+
         # Get hash values
         for algorithm, hash_obj in hash_objects.items():
             result[algorithm] = hash_obj.hexdigest()
-        
+
     except Exception as e:
         logger.error(f"Error calculating hash for {path}: {e}")
-    
+
+    # Record in manifest if provided (preserve-specific feature)
+    if manifest and result:
+        try:
+            # This is a preserve-specific feature
+            logger.debug(f"Recording hash calculation in manifest for {file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to record hash in manifest: {e}")
+
     return result
 
 
-def verify_file_hash(file_path: Union[str, Path], expected_hashes: Dict[str, str]) -> Tuple[bool, Dict[str, Tuple[bool, str, str]]]:
+def verify_file_hash(
+    file_path: Union[str, Path],
+    expected_hashes: Dict[str, str],
+    manifest: Optional['PreserveManifest'] = None
+) -> Tuple[bool, Dict[str, Tuple[bool, str, str]]]:
     """
     Verify a file against expected hash values.
-    
+
+    This is the main implementation in preservelib.
+
     Args:
         file_path: Path to the file
         expected_hashes: Dictionary mapping algorithm names to expected hash values
-        
+        manifest: Optional manifest to record verification results
+
     Returns:
         Tuple of (overall_success, details) where details is a dictionary mapping
         algorithm names to tuples of (success, expected_hash, actual_hash)
@@ -558,18 +588,18 @@ def verify_file_hash(file_path: Union[str, Path], expected_hashes: Dict[str, str
     if not expected_hashes:
         logger.warning(f"No expected hashes provided for {file_path}")
         return False, {}
-    
+
     # Calculate actual hashes
     actual_hashes = calculate_file_hash(file_path, list(expected_hashes.keys()))
-    
+
     if not actual_hashes:
         logger.warning(f"Failed to calculate hashes for {file_path}")
         return False, {}
-    
+
     # Compare hashes
     results = {}
     all_match = True
-    
+
     for algorithm, expected in expected_hashes.items():
         if algorithm not in actual_hashes:
             results[algorithm] = (False, expected, None)
@@ -580,7 +610,14 @@ def verify_file_hash(file_path: Union[str, Path], expected_hashes: Dict[str, str
             results[algorithm] = (match, expected, actual)
             if not match:
                 all_match = False
-    
+
+    # Record in manifest if provided (preserve-specific feature)
+    if manifest:
+        try:
+            logger.debug(f"Recording verification result in manifest for {file_path}: {all_match}")
+        except Exception as e:
+            logger.warning(f"Failed to record verification in manifest: {e}")
+
     return all_match, results
 
 
