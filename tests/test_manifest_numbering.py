@@ -13,13 +13,44 @@ import tempfile
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
+from types import SimpleNamespace
 import re
+import logging
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from preserve import preserve
 from preservelib import manifest
+
+
+def create_test_args(**kwargs):
+    """Create test args with defaults to replace MagicMock.
+
+    This prevents spurious 'MagicMock' directories from being created
+    when MagicMock objects are used as path strings.
+    """
+    defaults = {
+        'src': None,
+        'dst': None,
+        'sources': None,
+        'manifest': None,
+        'no_manifest': False,
+        'no_dazzlelinks': False,
+        'use_dazzlelinks': False,
+        'list': False,
+        'manifest_number': None,
+        'number': None,
+        'dry_run': False,
+        'force': False,
+        'preserve_dir': None,
+        'description': None,
+        'hash': None,
+        'verbose': False,
+        'dazzlelink_dir': None,
+    }
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
 
 
 class TestManifestNumbering(unittest.TestCase):
@@ -30,6 +61,10 @@ class TestManifestNumbering(unittest.TestCase):
         # Create temporary test directory
         self.test_dir = Path(tempfile.mkdtemp(prefix="test_manifest_"))
         self.addCleanup(shutil.rmtree, self.test_dir, ignore_errors=True)
+
+        # Create a proper logger for tests instead of MagicMock
+        self.logger = logging.getLogger('test_manifest')
+        self.logger.setLevel(logging.WARNING)  # Only show warnings/errors in tests
 
         # Create source and destination directories
         self.source_dir = self.test_dir / "source"
@@ -51,12 +86,12 @@ class TestManifestNumbering(unittest.TestCase):
 
     def test_get_manifest_path_first_operation(self):
         """Test that first operation creates preserve_manifest.json."""
-        # Create mock args
-        args = MagicMock()
-        args.dst = str(self.dest_dir)
-        args.no_manifest = False
-        args.manifest = None  # Important: ensure manifest is enabled
-        args.manifest = None  # Not using explicit manifest path
+        # Create args using helper to avoid MagicMock string issues
+        args = create_test_args(
+            dst=str(self.dest_dir),
+            no_manifest=False,
+            manifest=None  # Not using explicit manifest path
+        )
 
         # Get manifest path for first operation
         manifest_path = preserve.get_manifest_path(args, self.dest_dir)
@@ -68,7 +103,7 @@ class TestManifestNumbering(unittest.TestCase):
     def test_get_manifest_path_second_operation(self):
         """Test that second operation migrates existing and creates _002."""
         # Create mock args
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.dest_dir)
         args.no_manifest = False
         args.manifest = None
@@ -87,7 +122,7 @@ class TestManifestNumbering(unittest.TestCase):
 
     def test_get_manifest_path_sequential_numbering(self):
         """Test sequential numbering for multiple operations."""
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.dest_dir)
         args.no_manifest = False
         args.manifest = None
@@ -105,7 +140,7 @@ class TestManifestNumbering(unittest.TestCase):
 
     def test_get_manifest_path_with_gaps(self):
         """Test that numbering handles gaps correctly."""
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.dest_dir)
         args.no_manifest = False
         args.manifest = None
@@ -123,7 +158,7 @@ class TestManifestNumbering(unittest.TestCase):
 
     def test_get_manifest_path_with_descriptions(self):
         """Test that user descriptions in filenames are handled correctly."""
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.dest_dir)
         args.no_manifest = False
         args.manifest = None
@@ -229,7 +264,7 @@ class TestManifestNumbering(unittest.TestCase):
         mock_copy.return_value = 0
 
         # Simulate multiple operations
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.dest_dir)
         args.no_manifest = False
         args.manifest = None
@@ -276,7 +311,7 @@ class TestManifestMigration(unittest.TestCase):
         original.write_text(json.dumps(original_content, indent=2))
 
         # Trigger migration
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.test_dir)
         args.no_manifest = False
         args.manifest = None
@@ -298,7 +333,7 @@ class TestManifestMigration(unittest.TestCase):
         original.write_text("Not valid JSON {]}")
 
         # Trigger migration - should still work
-        args = MagicMock()
+        args = create_test_args()
         args.dst = str(self.test_dir)
         args.no_manifest = False
         args.manifest = None
@@ -324,12 +359,17 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         self.test_dir = Path(tempfile.mkdtemp(prefix="test_restore_"))
         self.addCleanup(shutil.rmtree, self.test_dir, ignore_errors=True)
 
+        # Create a proper logger for tests instead of MagicMock
+        self.logger = logging.getLogger('test_restore')
+        self.logger.setLevel(logging.WARNING)  # Only show warnings/errors in tests
+
     def create_test_manifest(self, path, number, file_count=2):
         """Create a test manifest with specified number of files."""
         manifest_data = {
             "manifest_version": 1,
             "operation": "COPY",
             "timestamp": f"2024-01-0{number}T12:00:00",
+            "operations": [],  # Add operations field for compatibility
             "files": {}
         }
 
@@ -357,7 +397,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         )
 
         # Mock args for --list
-        args = MagicMock()
+        args = create_test_args()
         args.src = str(self.test_dir)
         args.list = True
         args.manifest_number = None
@@ -366,7 +406,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
 
         # Capture print output
         with patch('builtins.print') as mock_print:
-            result = preserve.handle_restore_operation(args, MagicMock())
+            result = preserve.handle_restore_operation(args, self.logger)
 
         # Check that manifests were listed
         print_calls = [str(call) for call in mock_print.call_args_list]
@@ -390,7 +430,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         )
 
         # Mock args for --number 2
-        args = MagicMock()
+        args = create_test_args()
         args.src = str(self.test_dir)
         args.list = False
         args.manifest_number = 2
@@ -410,7 +450,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:
-            result = preserve.handle_restore_operation(args, MagicMock())
+            result = preserve.handle_restore_operation(args, self.logger)
 
         # Verify correct manifest was selected
         print_calls = [str(call) for call in mock_print.call_args_list]
@@ -439,7 +479,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         )
 
         # Mock args without specific number
-        args = MagicMock()
+        args = create_test_args()
         args.src = str(self.test_dir)
         args.list = False
         args.manifest_number = None
@@ -459,7 +499,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:
-            result = preserve.handle_restore_operation(args, MagicMock())
+            result = preserve.handle_restore_operation(args, self.logger)
 
         # Verify latest manifest was selected
         print_calls = [str(call) for call in mock_print.call_args_list]

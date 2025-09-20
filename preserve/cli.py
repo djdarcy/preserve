@@ -7,6 +7,7 @@ argument parsing, help text, and command structure definition.
 
 import argparse
 from preserve import __version__, __doc__
+from preserve.help import examples
 
 
 def create_parser():
@@ -195,24 +196,40 @@ Note: When moving directories, --recursive (-r) is required to include files in 
 
 def _add_source_args(parser):
     """Add source-related arguments to a parser"""
-    parser.add_argument('sources', nargs='*', metavar='SOURCE',
-                       help='Source files or directories to process')
-    parser.add_argument('--loadIncludes', '--load-includes',
-                       help='Load list of sources from text file (one per line)')
-    parser.add_argument('--glob',
-                       help='Glob pattern to match files (e.g., "*.txt", "**/*.py")')
-    parser.add_argument('--srchPath', '--search-path',
-                       help='Base path to search for files when using --glob')
-    parser.add_argument('--recursive', '-r', action='store_true',
-                       help='Include files from subdirectories')
-    parser.add_argument('--includeBase', '--include-base', action='store_true',
-                       help='Include the source directory name in destination path')
+    source_group = parser.add_argument_group('Source options')
+
+    # Ways to specify sources
+    sources_spec = source_group.add_mutually_exclusive_group()
+    sources_spec.add_argument('sources', nargs='*', help='Source files or directories to process', default=[])
+    sources_spec.add_argument('--srchPath', action='append', help='Directories to search within (can specify multiple)')
+
+    # Pattern matching
+    pattern_group = source_group.add_mutually_exclusive_group()
+    pattern_group.add_argument('--glob', action='append', help='Glob pattern(s) to match files (can specify multiple)')
+    pattern_group.add_argument('--regex', action='append', help='Regular expression(s) to match files (can specify multiple)')
+
+    # Include/exclude options
+    source_group.add_argument('--include', action='append', help='Explicitly include file or directory (can specify multiple)')
+    source_group.add_argument('--exclude', action='append', help='Explicitly exclude file or directory (can specify multiple)')
+    source_group.add_argument('--loadIncludes', help='Load includes from file (one per line)')
+    source_group.add_argument('--loadExcludes', help='Load excludes from file (one per line)')
+
+    # Recursion and filtering
+    source_group.add_argument('--recursive', '-r', action='store_true', help='Recurse into subdirectories')
+    source_group.add_argument('--max-depth', type=int, help='Maximum recursion depth')
+    source_group.add_argument('--follow-symlinks', action='store_true', help='Follow symbolic links during recursion')
+    source_group.add_argument('--newer-than', help='Only include files newer than this date or time period (e.g., "7d", "2023-01-01")')
+    source_group.add_argument('--includeBase', action='store_true', help='Include source directory name in destination path')
 
 
 def _add_destination_args(parser):
     """Add destination-related arguments to a parser"""
-    parser.add_argument('--dst', required=True,
-                       help='Destination directory for preserved files')
+    dest_group = parser.add_argument_group('Destination options')
+    dest_group.add_argument('--dst', required=True, help='Destination directory')
+    dest_group.add_argument('--preserve-dir', action='store_true',
+                           help='Create .preserve directory for manifests and metadata')
+    dest_group.add_argument('--manifest', help='Custom manifest filename (default: preserve_manifest.json)')
+    dest_group.add_argument('--no-manifest', action='store_true', help='Do not create a manifest file')
 
 
 def _add_path_args(parser):
@@ -250,5 +267,7 @@ def display_help_with_examples(parser, args):
     if hasattr(args, 'operation') and args.operation:
         operation = args.operation
         parser.print_help()
+        print("\n" + examples.get_operation_examples(operation))
     else:
         parser.print_help()
+        print("\nFor more examples, use --help with a specific operation")

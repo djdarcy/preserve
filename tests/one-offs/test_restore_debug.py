@@ -4,6 +4,7 @@
 import sys
 import os
 import json
+import logging
 import tempfile
 import shutil
 from pathlib import Path
@@ -52,8 +53,9 @@ args.number = 2
 args.dry_run = False
 args.force = False
 
-# Mock logger
-logger = MagicMock()
+# Create a proper logger for tests instead of MagicMock
+logger = logging.getLogger('test_restore_debug')
+logger.setLevel(logging.INFO)  # Show info for debugging
 
 # Try to run restore
 print("\nRunning handle_restore_operation...")
