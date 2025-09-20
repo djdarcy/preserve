@@ -1119,12 +1119,12 @@ def handle_move_operation(args, logger):
                 (not options['verify'] or result.unverified_count() == 0)) else 1
 
 def handle_verify_operation(args, logger):
-    """Handle VERIFY operation using the new verification module"""
+    """Handle VERIFY operation with optional source comparison."""
     logger.info("Starting VERIFY operation")
 
-    # Import from the new verification module
-    from preservelib.verification import find_and_verify_manifest
-    from preservelib.manifest import find_available_manifests
+    # Import from the verification modules
+    from preservelib.verification import find_and_verify_manifest, verify_three_way
+    from preservelib.manifest import find_available_manifests, read_manifest
 
     # Get destination path
     dest_path = Path(args.dst)
@@ -1157,75 +1157,238 @@ def handle_verify_operation(args, logger):
     # Get hash algorithms
     hash_algorithms = get_hash_algorithms(args)
 
-    # Get specific manifest if provided
-    manifest_path = None
-    if args.manifest:
-        manifest_path = Path(args.manifest)
-        if not manifest_path.exists():
-            logger.error(f"Specified manifest does not exist: {manifest_path}")
+    # Check if we have a source directory for three-way verification
+    if args.src:
+        source_path = Path(args.src)
+        if not source_path.exists():
+            logger.error(f"Source directory does not exist: {source_path}")
+            print(f"Error: Cannot find source directory: {source_path}")
             return 1
 
-    # Run verification using the new module
-    try:
-        manifest, result = find_and_verify_manifest(
-            destination=dest_path,
-            manifest_number=args.manifest_number if hasattr(args, 'manifest_number') else None,
-            manifest_path=manifest_path,
+        # Find the manifest to use
+        manifest_path = None
+        if args.manifest:
+            manifest_path = Path(args.manifest)
+            if not manifest_path.exists():
+                logger.error(f"Specified manifest does not exist: {manifest_path}")
+                return 1
+        else:
+            # Find manifest using the same logic as two-way
+            manifests = find_available_manifests(dest_path)
+            if hasattr(args, 'manifest_number') and args.manifest_number:
+                # User specified a number
+                for num, path, desc in manifests:
+                    if num == args.manifest_number:
+                        manifest_path = path
+                        break
+                if not manifest_path:
+                    logger.error(f"Manifest number {args.manifest_number} not found")
+                    return 1
+            elif manifests:
+                # Use the latest manifest
+                manifest_path = manifests[-1][1]
+            else:
+                logger.error("No manifests found in destination")
+                return 1
+
+        # Load the manifest
+        manifest = read_manifest(manifest_path)
+        if not manifest:
+            logger.error(f"Failed to load manifest: {manifest_path}")
+            return 1
+
+        # Perform three-way verification
+        print(f"\nPerforming three-way verification:")
+        print(f"  Source:    {source_path}")
+        print(f"  Preserved: {dest_path}")
+        print(f"  Manifest:  {manifest_path.name}")
+        print()
+
+        result = verify_three_way(
+            source_path=source_path,
+            preserved_path=dest_path,
+            manifest=manifest,
             hash_algorithms=hash_algorithms
         )
 
-        # Print summary
-        print("\nVERIFY Operation Summary:")
-        print(f"  Using manifest: {manifest.manifest_path.name if manifest else 'Unknown'}")
-        print(f"  Verified: {result.verified_count}")
-        print(f"  Failed: {result.failed_count}")
-        print(f"  Missing: {result.missing_count}")
+        # Display three-way results
+        print("Three-Way Verification Results:")
+        print("="*50)
 
-        # Print details if there are issues
-        if result.failed_files:
-            print("\nFailed files:")
-            for file in result.failed_files:
-                print(f"  - {file}")
+        total_files = (len(result.all_match) + len(result.source_modified) +
+                      len(result.preserved_corrupted) +
+                      len(result.not_found) + len(result.errors))
 
-        if result.missing_files:
-            print("\nMissing files:")
-            for file in result.missing_files:
-                print(f"  - {file}")
+        # Summary
+        if result.all_match:
+            print(f"  [OK] All match: {len(result.all_match)}")
+        if result.source_modified:
+            print(f"  [WARN] Source modified: {len(result.source_modified)}")
+        if result.preserved_corrupted:
+            print(f"  [FAIL] Preserved corrupted: {len(result.preserved_corrupted)}")
+        if result.not_found:
+            print(f"  [?] Not found: {len(result.not_found)}")
+        if result.errors:
+            print(f"  [ERR] Errors: {len(result.errors)}")
+
+        # Detailed output for issues
+        if result.source_modified:
+            print("\n[WARN] Files modified in source since preservation:")
+            for item in result.source_modified[:10]:
+                print(f"    - {item.file_path}")
+            if len(result.source_modified) > 10:
+                print(f"    ... and {len(result.source_modified) - 10} more")
+
+        if result.preserved_corrupted:
+            print("\n[FAIL] CRITICAL: Preserved files corrupted:")
+            for item in result.preserved_corrupted:
+                print(f"    - {item.file_path}")
+
+        if result.errors:
+            # Check for complex differences in errors
+            complex_diffs = [e for e in result.errors if "Complex difference" in e.error_message]
+            other_errors = [e for e in result.errors if "Complex difference" not in e.error_message]
+
+            if complex_diffs:
+                print("\n[COMPLEX] Files where all three differ (source != preserved != manifest):")
+                for item in complex_diffs[:5]:
+                    print(f"    - {item.file_path}")
+                if len(complex_diffs) > 5:
+                    print(f"    ... and {len(complex_diffs) - 5} more")
+
+            if other_errors:
+                print("\n[ERR] Other errors:")
+                for item in other_errors[:5]:
+                    print(f"    - {item.file_path}: {item.error_message}")
+                if len(other_errors) > 5:
+                    print(f"    ... and {len(other_errors) - 5} more")
 
         # Handle report if requested
         if hasattr(args, 'report') and args.report:
             report_path = Path(args.report)
             with open(report_path, 'w') as f:
-                f.write(f"Verification Report\n")
-                f.write(f"==================\n\n")
-                f.write(f"Manifest: {manifest.manifest_path.name if manifest else 'Unknown'}\n")
+                f.write(f"Three-Way Verification Report\n")
+                f.write(f"="*50 + "\n\n")
+                f.write(f"Source:    {source_path}\n")
+                f.write(f"Preserved: {dest_path}\n")
+                f.write(f"Manifest:  {manifest_path.name}\n")
                 f.write(f"Timestamp: {datetime.now().isoformat()}\n\n")
-                f.write(f"Summary:\n")
-                f.write(f"  Verified: {result.verified_count}\n")
-                f.write(f"  Failed: {result.failed_count}\n")
-                f.write(f"  Missing: {result.missing_count}\n\n")
+                # Separate complex differences from other errors
+                complex_diffs = [e for e in result.errors if "Complex difference" in e.error_message] if result.errors else []
+                other_errors = [e for e in result.errors if "Complex difference" not in e.error_message] if result.errors else []
 
-                if result.failed_files:
-                    f.write("Failed Files:\n")
-                    for file in result.failed_files:
-                        f.write(f"  - {file}\n")
+                f.write(f"Summary:\n")
+                f.write(f"  All match: {len(result.all_match)}\n")
+                f.write(f"  Source modified: {len(result.source_modified)}\n")
+                f.write(f"  Preserved corrupted: {len(result.preserved_corrupted)}\n")
+                f.write(f"  Complex differences: {len(complex_diffs)}\n")
+                f.write(f"  Not found: {len(result.not_found)}\n")
+                f.write(f"  Other errors: {len(other_errors)}\n\n")
+
+                if result.source_modified:
+                    f.write("Source Modified Files:\n")
+                    for item in result.source_modified:
+                        f.write(f"  - {item.file_path}\n")
                     f.write("\n")
 
-                if result.missing_files:
-                    f.write("Missing Files:\n")
-                    for file in result.missing_files:
-                        f.write(f"  - {file}\n")
+                if result.preserved_corrupted:
+                    f.write("Preserved Corrupted Files:\n")
+                    for item in result.preserved_corrupted:
+                        f.write(f"  - {item.file_path}\n")
+                    f.write("\n")
+
+                if complex_diffs:
+                    f.write("Complex Differences (all three differ):\n")
+                    for item in complex_diffs:
+                        f.write(f"  - {item.file_path}\n")
+                    f.write("\n")
+
+                if other_errors:
+                    f.write("Other Errors:\n")
+                    for item in other_errors:
+                        f.write(f"  - {item.file_path}: {item.error_message}\n")
 
             print(f"\n  Report written to: {report_path}")
 
-        # Return success if all files verified
-        return 0 if result.is_successful else 1
+        # Return 0 only if no critical issues
+        return 0 if (len(result.preserved_corrupted) == 0 and len(result.errors) == 0) else 1
 
-    except Exception as e:
-        logger.error(f"Verification failed: {e}")
-        import traceback
-        logger.debug(traceback.format_exc())
-        return 1
+    else:
+        # Two-way verification (existing behavior)
+        print(f"\nPerforming two-way verification (preserved vs manifest):")
+        print(f"  Preserved: {dest_path}")
+        print(f"  Tip: Use --src to also verify against original source files")
+        print()
+
+        # Get specific manifest if provided
+        manifest_path = None
+        if args.manifest:
+            manifest_path = Path(args.manifest)
+            if not manifest_path.exists():
+                logger.error(f"Specified manifest does not exist: {manifest_path}")
+                return 1
+
+        # Run verification using the existing module
+        try:
+            manifest, result = find_and_verify_manifest(
+                destination=dest_path,
+                manifest_number=args.manifest_number if hasattr(args, 'manifest_number') else None,
+                manifest_path=manifest_path,
+                hash_algorithms=hash_algorithms
+            )
+
+            # Print summary
+            print("VERIFY Operation Summary:")
+            print(f"  Using manifest: {manifest.manifest_path.name if manifest else 'Unknown'}")
+            print(f"  Verified: {result.verified_count}")
+            print(f"  Failed: {result.failed_count}")
+            print(f"  Missing: {result.missing_count}")
+
+            # Print details if there are issues
+            if result.failed_files:
+                print("\nFailed files:")
+                for file in result.failed_files:
+                    print(f"  - {file}")
+
+            if result.missing_files:
+                print("\nMissing files:")
+                for file in result.missing_files:
+                    print(f"  - {file}")
+
+            # Handle report if requested
+            if hasattr(args, 'report') and args.report:
+                report_path = Path(args.report)
+                with open(report_path, 'w') as f:
+                    f.write(f"Verification Report\n")
+                    f.write(f"==================\n\n")
+                    f.write(f"Manifest: {manifest.manifest_path.name if manifest else 'Unknown'}\n")
+                    f.write(f"Timestamp: {datetime.now().isoformat()}\n\n")
+                    f.write(f"Summary:\n")
+                    f.write(f"  Verified: {result.verified_count}\n")
+                    f.write(f"  Failed: {result.failed_count}\n")
+                    f.write(f"  Missing: {result.missing_count}\n\n")
+
+                    if result.failed_files:
+                        f.write("Failed Files:\n")
+                        for file in result.failed_files:
+                            f.write(f"  - {file}\n")
+                        f.write("\n")
+
+                    if result.missing_files:
+                        f.write("Missing Files:\n")
+                        for file in result.missing_files:
+                            f.write(f"  - {file}\n")
+
+                print(f"\n  Report written to: {report_path}")
+
+            # Return success if all files verified
+            return 0 if result.is_successful else 1
+
+        except Exception as e:
+            logger.error(f"Verification failed: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return 1
 
 def handle_restore_operation(args, logger):
     """Handle RESTORE operation with support for multiple manifests"""

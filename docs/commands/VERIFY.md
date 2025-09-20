@@ -6,8 +6,10 @@ The `VERIFY` command checks the integrity of preserved files by comparing their 
 
 ## What VERIFY Does
 
-When you run VERIFY, it:
+VERIFY operates in two modes:
 
+### Two-Way Verification (default)
+When you run VERIFY without `--src`:
 1. **Loads the manifest** from the destination directory
 2. **For each file in the manifest**:
    - Locates the file at its preserved location
@@ -15,12 +17,24 @@ When you run VERIFY, it:
    - Compares it against the expected hash stored in the manifest
    - Reports the verification status
 
+### Three-Way Verification (with --src)
+When you run VERIFY with `--src`:
+1. **Loads the manifest** from the destination directory
+2. **For each file in the manifest**:
+   - Calculates hash of the source file (original location)
+   - Calculates hash of the preserved file (backup location)
+   - Compares both against the expected hash in the manifest
+   - Categorizes the result:
+     - **All match**: Source, preserved, and manifest all match
+     - **Source modified**: Source changed since preservation
+     - **Preserved corrupted**: Backup doesn't match manifest
+     - **Complex difference**: All three are different
+
 ## What VERIFY Does NOT Do
 
-- Does NOT check the original source files (unless `--src` is specified)
 - Does NOT modify any files - it's read-only
-- Does NOT compare against files in their original locations
-- Does NOT perform three-way verification (use `RESTORE --verify` for that)
+- Does NOT restore or move files
+- Does NOT automatically detect source location (must use `--src` explicitly)
 
 ## Basic Usage
 
@@ -117,17 +131,28 @@ VERIFY Operation Summary:
   Missing: 0
 ```
 
-### Example 3: Verify with Source Comparison
+### Example 3: Verify with Source Comparison (Three-Way)
 ```bash
-# This compares preserved files against their original source
+# This performs three-way verification: source vs preserved vs manifest
 preserve VERIFY --src /original/data --dst /backup/data
 
 # Output:
-VERIFY Operation Summary:
-  Verified against source: 100
-  Source modified: 5
-  Failed: 0
-  Missing: 0
+Performing three-way verification:
+  Source:    /original/data
+  Preserved: /backup/data
+  Manifest:  preserve_manifest.json
+
+Three-Way Verification Results:
+==================================================
+  [OK] All match: 95
+  [WARN] Source modified: 5
+
+[WARN] Files modified in source since preservation:
+    - /backup/data/config.json
+    - /backup/data/users.db
+    - /backup/data/logs/app.log
+    - /backup/data/cache/temp.dat
+    - /backup/data/settings.ini
 ```
 
 ### Example 4: Generate Verification Report
