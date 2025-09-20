@@ -62,9 +62,8 @@ __doc__ = f"""
 preserve v{get_base_version()} - Cross-platform file preservation with verification and restoration
 
 Examples:
-    # Copy all files from a directory (most common usage)
-    preserve COPY "C:/source/dir" --recursive --dst "D:/backup" --includeBase
-    preserve COPY "C:/source/dir" -r --rel --dst "D:/backup"  # With relative paths
+    # Copy entire directory with relative paths (most common usage)
+    preserve COPY "C:/source/dir" --recursive --rel --includeBase --dst "D:/backup"
 
     # Copy files matching a glob pattern
     preserve COPY --glob "*.txt" --srchPath "C:/data" --rel --dst "E:/backup"
@@ -190,9 +189,8 @@ Operations:
     CONFIG             View or modify configuration settings
 
 Examples:
-    # Copy all files from a directory (most common usage)
-    preserve COPY "C:/source/dir" --recursive --dst "D:/backup" --includeBase
-    preserve COPY "C:/source/dir" -r --rel --dst "D:/backup"  # With relative paths
+    # Copy entire directory with relative paths (most common usage)
+    preserve COPY "C:/source/dir" --recursive --rel --includeBase --dst "D:/backup"
 
     # Copy files matching a glob pattern
     preserve COPY --glob "*.txt" --srchPath "C:/data" --rel --dst "E:/backup"
@@ -216,11 +214,8 @@ Note: For detailed help on each operation, use: preserve COPY --help
 
 For more examples, use --help with a specific operation""")
         return 0
-    elif '--help' in sys.argv or '-h' in sys.argv:
-        args = parser.parse_args()
-        parser.print_help()
-        return 0
 
+    # Let argparse handle --help and -h automatically
     args = parser.parse_args()
 
     # Set up logging

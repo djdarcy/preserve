@@ -6,16 +6,43 @@ argument parsing, help text, and command structure definition.
 """
 
 import argparse
-from preserve import __version__, __doc__
+from preserve import __version__
+from preserve.version import get_base_version
 from preserve.help import examples
 
 
 def create_parser():
     """Create argument parser with all CLI options"""
+    epilog_text = """Examples:
+    # Copy entire directory with relative paths (most common usage)
+    preserve COPY "C:/source/dir" --recursive --rel --includeBase --dst "D:/backup"
+
+    # Copy files matching a glob pattern
+    preserve COPY --glob "*.txt" --srchPath "C:/data" --rel --dst "E:/backup"
+
+    # Copy with hash verification
+    preserve COPY --glob "*.jpg" --srchPath "D:/photos" --hash SHA256 --dst "E:/archive"
+
+    # Move files with absolute path preservation
+    preserve MOVE --glob "*.docx" --srchPath "C:/old" --abs --dst "D:/new"
+
+    # Load a list of files to copy from a text file
+    preserve COPY --loadIncludes "files_to_copy.txt" --dst "E:/backup"
+
+    # Verify files in destination against sources
+    preserve VERIFY --dst "E:/backup"
+
+    # Restore files to original locations
+    preserve RESTORE --src "E:/backup" --force
+
+Note: For detailed help on each operation, use: preserve COPY --help
+
+For more examples, use --help with a specific operation"""
+
     parser = argparse.ArgumentParser(
         prog='preserve',
-        description='Preserve v0.3.0 - Cross-platform file preservation with verification and restoration',
-        epilog='For detailed command help: preserve [COMMAND] --help\n\n' + __doc__,
+        description=f'Preserve v{get_base_version()} - Cross-platform file preservation with verification and restoration',
+        epilog=epilog_text,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
@@ -36,21 +63,20 @@ def create_parser():
     # === COPY operation ===
     copy_parser = subparsers.add_parser('COPY',
                                        help='Copy files to destination with path preservation',
-                                       description='''Copy files to destination with path preservation.
+                                       description='Copy files to destination with path preservation.',
+                                       epilog='''Common usage patterns:
 
-Common usage patterns:
+1. Copy entire directory with relative paths (most common):
+   preserve COPY "C:\\source\\dir" --recursive --rel --includeBase --dst "D:\\backup"
 
-1. Copy all files from a directory (most common):
-   preserve COPY "C:\\source\\dir" --recursive --dst "D:\\backup" --includeBase
+2. Copy with absolute path structure:
+   preserve COPY "C:\\source\\dir" --recursive --abs --includeBase --dst "D:\\backup"
 
-2. Copy with relative path structure:
-   preserve COPY "C:\\source\\dir" -r --rel --dst "D:\\backup"
+3. Copy files flat (no subdirectories):
+   preserve COPY "C:\\source\\dir" --recursive --flat --dst "D:\\backup"
 
-3. Copy with absolute path structure:
-   preserve COPY "C:\\source\\dir" -r --abs --dst "D:\\backup"
-
-4. Copy files flat (no subdirectories):
-   preserve COPY "C:\\source\\dir" -r --flat --dst "D:\\backup"
+4. Copy specific file types with pattern:
+   preserve COPY --glob "*.jpg" --srchPath "C:\\photos" --recursive --rel --dst "D:\\backup"
 
 Note: When copying directories, --recursive (-r) is required to include files in subdirectories.
       Most users also want --includeBase to preserve the source directory name.''',
@@ -70,21 +96,20 @@ Note: When copying directories, --recursive (-r) is required to include files in
     # === MOVE operation ===
     move_parser = subparsers.add_parser('MOVE',
                                        help='Copy files then remove originals after verification',
-                                       description='''Move files to destination (copy then delete originals after verification).
+                                       description='Move files to destination (copy then delete originals after verification).',
+                                       epilog='''Common usage patterns:
 
-Common usage patterns:
+1. Move entire directory with relative paths (most common):
+   preserve MOVE "C:\\source\\dir" --recursive --rel --includeBase --dst "D:\\new-location"
 
-1. Move all files from a directory (most common):
-   preserve MOVE "C:\\source\\dir" --recursive --dst "D:\\new-location" --includeBase
+2. Move with absolute path structure:
+   preserve MOVE "C:\\source\\dir" --recursive --abs --includeBase --dst "D:\\new-location"
 
-2. Move with relative path structure:
-   preserve MOVE "C:\\source\\dir" -r --rel --dst "D:\\new-location"
+3. Move files flat (no subdirectories):
+   preserve MOVE "C:\\source\\dir" --recursive --flat --dst "D:\\new-location"
 
-3. Move with absolute path structure:
-   preserve MOVE "C:\\source\\dir" -r --abs --dst "D:\\new-location"
-
-4. Move files flat (no subdirectories):
-   preserve MOVE "C:\\source\\dir" -r --flat --dst "D:\\new-location"
+4. Move specific file types with pattern:
+   preserve MOVE --glob "*.docx" --srchPath "C:\\old" --recursive --rel --dst "D:\\new-location"
 
 Note: When moving directories, --recursive (-r) is required to include files in subdirectories.
       Most users also want --includeBase to preserve the source directory name.
@@ -108,12 +133,26 @@ Note: When moving directories, --recursive (-r) is required to include files in 
                                           description='Verify that preserved files have not been corrupted or modified since preservation. '
                                                      'Compares current file hashes against those recorded in the manifest. '
                                                      'Does NOT check original source files unless --src is specified.',
-                                          epilog='Examples:\n'
-                                                '  Verify latest preservation:      preserve VERIFY --dst /backup/data\n'
-                                                '  Verify specific manifest:        preserve VERIFY --dst /backup/data -n 2\n'
-                                                '  List available manifests:        preserve VERIFY --dst /backup/data --list\n'
-                                                '  Compare against source:          preserve VERIFY --src /original --dst /backup\n'
-                                                '  Generate verification report:    preserve VERIFY --dst /backup --report verify.txt')
+                                          epilog='''Examples:
+
+1. Auto-verify everything (most common - finds source from manifest):
+   preserve VERIFY --dst "D:/backup/data" --auto
+
+2. Verify preserved files only (no source check):
+   preserve VERIFY --dst "D:/backup/data"
+
+3. Compare against specific source:
+   preserve VERIFY --src "C:/original" --dst "D:/backup"
+
+4. List available manifests:
+   preserve VERIFY --dst "D:/backup/data" --list
+
+5. Verify specific manifest:
+   preserve VERIFY --dst "D:/backup/data" -n 2
+
+6. Generate verification report:
+   preserve VERIFY --dst "D:/backup" --report verify.txt''',
+                                          formatter_class=argparse.RawDescriptionHelpFormatter)
     verify_parser.add_argument('--src',
                               help='Original source location to compare against (optional - compares preserved files vs source)')
     verify_parser.add_argument('--dst',
@@ -139,13 +178,26 @@ Note: When moving directories, --recursive (-r) is required to include files in 
     restore_parser = subparsers.add_parser('RESTORE',
                                           help='Restore preserved files back to their original locations',
                                           description='Restore preserved files back to their original locations based on the manifest.',
-                                          epilog='Examples:\n'
-                                                '  Restore latest preservation:     preserve RESTORE --src /backup/data\n'
-                                                '  List available restore points:   preserve RESTORE --src /backup/data --list\n'
-                                                '  Restore specific manifest:       preserve RESTORE --src /backup/data --number 2\n'
-                                                '  Restore to different location:   preserve RESTORE --src /backup --dst /new/location\n'
-                                                '  Verify before restoring:         preserve RESTORE --src /backup --verify\n'
-                                                '  Dry run to see changes:          preserve RESTORE --src /backup --dry-run')
+                                          epilog='''Examples:
+
+1. Restore latest preservation:
+   preserve RESTORE --src "D:/backup/data"
+
+2. List available restore points:
+   preserve RESTORE --src "D:/backup/data" --list
+
+3. Restore specific manifest:
+   preserve RESTORE --src "D:/backup/data" --number 2
+
+4. Restore to different location:
+   preserve RESTORE --src "D:/backup" --dst "C:/new/location"
+
+5. Verify before restoring:
+   preserve RESTORE --src "D:/backup" --verify
+
+6. Dry run to see changes:
+   preserve RESTORE --src "D:/backup" --dry-run''',
+                                          formatter_class=argparse.RawDescriptionHelpFormatter)
     restore_parser.add_argument('--src',
                                help='Path to preserved files directory containing manifest')
     restore_parser.add_argument('--dst',
@@ -170,12 +222,23 @@ Note: When moving directories, --recursive (-r) is required to include files in 
     config_parser = subparsers.add_parser('CONFIG',
                                          help='View or modify configuration settings',
                                          description='View or modify preserve configuration settings.',
-                                         epilog='Examples:\n'
-                                               '  View all configuration:          preserve CONFIG VIEW\n'
-                                               '  View specific section:           preserve CONFIG VIEW --section general\n'
-                                               '  Set a value:                     preserve CONFIG SET general.verbose true\n'
-                                               '  Reset to defaults:               preserve CONFIG RESET\n'
-                                               '  Reset specific section:          preserve CONFIG RESET --section paths')
+                                         epilog='''Examples:
+
+1. View all configuration:
+   preserve CONFIG VIEW
+
+2. View specific section:
+   preserve CONFIG VIEW --section general
+
+3. Set a value:
+   preserve CONFIG SET general.verbose true
+
+4. Reset to defaults:
+   preserve CONFIG RESET
+
+5. Reset specific section:
+   preserve CONFIG RESET --section paths''',
+                                         formatter_class=argparse.RawDescriptionHelpFormatter)
     config_subparsers = config_parser.add_subparsers(dest='config_operation', help='Configuration operation')
 
     # CONFIG VIEW
