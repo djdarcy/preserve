@@ -593,3 +593,336 @@ def is_within_directory(path: Union[str, Path], directory: Union[str, Path]) -> 
         return True
     except ValueError:
         return False
+
+
+# Check for dazzlelink availability
+try:
+    from preserve import dazzlelink as preserve_dazzlelink
+    HAVE_DAZZLELINK = preserve_dazzlelink.is_available()
+except ImportError:
+    try:
+        import dazzlelink as preserve_dazzlelink
+        HAVE_DAZZLELINK = preserve_dazzlelink.is_available()
+    except ImportError:
+        HAVE_DAZZLELINK = False
+        preserve_dazzlelink = None
+
+
+def find_files_from_args(args):
+    """Find files based on command-line arguments"""
+    source_files = []
+
+    # Direct source files
+    if args.sources:
+        for src in args.sources:
+            src_path = Path(src)
+            if src_path.exists():
+                if src_path.is_file():
+                    source_files.append(src_path)
+                elif src_path.is_dir() and hasattr(args, 'recursive') and args.recursive:
+                    # Recursively add all files in directory
+                    for root, _, files in os.walk(src_path):
+                        for file in files:
+                            source_files.append(Path(root) / file)
+                else:
+                    # Not recursive, just add files in top-level directory
+                    for item in src_path.glob('*'):
+                        if item.is_file():
+                            source_files.append(item)
+
+    # Search paths with glob/regex patterns
+    if hasattr(args, 'srchPath') and args.srchPath:
+        search_paths = [Path(p) for p in args.srchPath]
+
+        if hasattr(args, 'glob') and args.glob:
+            # Use glob patterns
+            for search_path in search_paths:
+                for pattern in args.glob:
+                    if hasattr(args, 'recursive') and args.recursive:
+                        # Recursive search
+                        for file in search_path.glob('**/' + pattern):
+                            if file.is_file():
+                                source_files.append(file)
+                    else:
+                        # Non-recursive search
+                        for file in search_path.glob(pattern):
+                            if file.is_file():
+                                source_files.append(file)
+
+        elif hasattr(args, 'regex') and args.regex:
+            # Use regex patterns
+            patterns = [re.compile(p) for p in args.regex]
+
+            for search_path in search_paths:
+                if hasattr(args, 'recursive') and args.recursive:
+                    # Recursive search
+                    for root, _, files in os.walk(search_path):
+                        for file in files:
+                            file_path = Path(root) / file
+                            if any(p.search(str(file_path)) for p in patterns):
+                                source_files.append(file_path)
+                else:
+                    # Non-recursive search
+                    for file in search_path.iterdir():
+                        if file.is_file() and any(p.search(str(file)) for p in patterns):
+                            source_files.append(file)
+
+    # Handle includes
+    if hasattr(args, 'include') and args.include:
+        for include in args.include:
+            inc_path = Path(include)
+            if inc_path.exists():
+                if inc_path.is_file():
+                    source_files.append(inc_path)
+                elif inc_path.is_dir() and hasattr(args, 'recursive') and args.recursive:
+                    # Recursively add all files in directory
+                    for root, _, files in os.walk(inc_path):
+                        for file in files:
+                            source_files.append(Path(root) / file)
+
+    # Handle loadIncludes
+    if hasattr(args, 'loadIncludes') and args.loadIncludes:
+        try:
+            with open(args.loadIncludes, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        inc_path = Path(line)
+                        if inc_path.exists() and inc_path.is_file():
+                            source_files.append(inc_path)
+        except Exception as e:
+            logger.error(f"Error loading includes from {args.loadIncludes}: {e}")
+
+    # Handle excludes and loadExcludes
+    exclude_paths = set()
+
+    if hasattr(args, 'exclude') and args.exclude:
+        for exclude in args.exclude:
+            excl_path = Path(exclude)
+            if excl_path.exists():
+                if excl_path.is_file():
+                    exclude_paths.add(excl_path)
+                elif excl_path.is_dir():
+                    # Add directory and all contents
+                    exclude_paths.add(excl_path)
+                    if hasattr(args, 'recursive') and args.recursive:
+                        for root, _, files in os.walk(excl_path):
+                            for file in files:
+                                exclude_paths.add(Path(root) / file)
+
+    if hasattr(args, 'loadExcludes') and args.loadExcludes:
+        try:
+            with open(args.loadExcludes, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        excl_path = Path(line)
+                        if excl_path.exists():
+                            exclude_paths.add(excl_path)
+        except Exception as e:
+            logger.error(f"Error loading excludes from {args.loadExcludes}: {e}")
+
+    # Apply newer-than filter if specified
+    if hasattr(args, 'newer_than') and args.newer_than:
+        try:
+            cutoff_time = parse_time_spec(args.newer_than)
+            source_files = [f for f in source_files if f.stat().st_mtime > cutoff_time]
+        except Exception as e:
+            logger.error(f"Error applying newer-than filter: {e}")
+
+    # Remove excluded files
+    source_files = [f for f in source_files if f not in exclude_paths]
+
+    # Remove duplicates while preserving order
+    unique_files = []
+    seen = set()
+    for file in source_files:
+        file_str = str(file)
+        if file_str not in seen:
+            seen.add(file_str)
+            unique_files.append(file)
+
+    return unique_files
+
+
+def get_hash_algorithms(args):
+    """Get hash algorithms from command-line arguments"""
+    if hasattr(args, 'hash') and args.hash:
+        return args.hash
+    else:
+        return ['SHA256']  # Default
+
+
+def get_path_style(args):
+    """Get path style from command-line arguments"""
+    if hasattr(args, 'rel') and args.rel:
+        return 'relative'
+    elif hasattr(args, 'abs') and args.abs:
+        return 'absolute'
+    elif hasattr(args, 'flat') and args.flat:
+        return 'flat'
+    else:
+        return 'absolute'  # Default to absolute for better preservation
+
+
+def get_preserve_dir(args, dest_path):
+    """Get preserve directory path"""
+    if hasattr(args, 'preserve_dir') and args.preserve_dir:
+        preserve_dir = Path(dest_path) / '.preserve'
+        preserve_dir.mkdir(parents=True, exist_ok=True)
+        return preserve_dir
+    return None
+
+
+def get_manifest_path(args, preserve_dir):
+    """Get manifest file path with sequential numbering support.
+
+    This function implements a smart naming system:
+    - First operation: creates preserve_manifest.json (backward compatible)
+    - Second operation: renames first to _001, creates _002
+    - Subsequent: creates _003, _004, etc.
+    - Supports user descriptions: preserve_manifest_001__description.json
+    """
+    if hasattr(args, 'no_manifest') and args.no_manifest:
+        return None
+
+    if hasattr(args, 'manifest') and args.manifest:
+        return Path(args.manifest)
+
+    # Determine destination directory
+    dest = preserve_dir if preserve_dir else Path(args.dst)
+    single_manifest = dest / 'preserve_manifest.json'
+
+    # Check if single manifest exists
+    if single_manifest.exists():
+        # Check if we also have numbered manifests
+        numbered = list(dest.glob('preserve_manifest_[0-9][0-9][0-9]*.json'))
+        if not numbered:
+            # This is the second operation - migrate the single manifest
+            new_001 = dest / 'preserve_manifest_001.json'
+            print(f"Migrating {single_manifest.name} to {new_001.name}")
+            try:
+                single_manifest.rename(new_001)
+                logger.info(f"Migrated existing manifest to {new_001.name}")
+            except Exception as e:
+                logger.error(f"Failed to migrate manifest: {e}")
+                # Fall back to creating _002 anyway
+            return dest / 'preserve_manifest_002.json'
+
+    # Look for existing numbered manifests
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__.*)?\.json')
+    existing_numbers = []
+
+    for file in dest.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            existing_numbers.append(int(match.group(1)))
+
+    # If no manifests exist at all, create the simple one
+    if not existing_numbers and not single_manifest.exists():
+        return single_manifest
+
+    # Find the next sequential number
+    if existing_numbers:
+        next_num = max(existing_numbers) + 1
+        return dest / f'preserve_manifest_{next_num:03d}.json'
+
+    # Edge case: single manifest exists but couldn't be migrated
+    # and no numbered manifests exist
+    return dest / 'preserve_manifest_002.json'
+
+
+def get_dazzlelink_dir(args, preserve_dir):
+    """
+    Get dazzlelink directory path based on user options.
+
+    This function determines where to store dazzlelink files based on
+    user arguments. It respects the path preservation style (--abs, --rel, --flat)
+    and properly structures the dazzlelink directory to mirror the destination.
+
+    Args:
+        args: Command-line arguments
+        preserve_dir: Preserve directory path
+
+    Returns:
+        Path object for dazzlelink directory or None if not applicable
+    """
+    if not (hasattr(args, 'dazzlelink') and args.dazzlelink):
+        return None
+
+    if hasattr(args, 'dazzlelink_with_files') and args.dazzlelink_with_files:
+        return None  # Store alongside files
+
+    # Base destination path
+    dest_base = Path(args.dst)
+
+    if hasattr(args, 'dazzlelink_dir') and args.dazzlelink_dir:
+        # User specified a custom dazzlelink directory
+        # Make it relative to the destination path
+        custom_dir = args.dazzlelink_dir
+
+        # If it's an absolute path, use it directly
+        if Path(custom_dir).is_absolute():
+            dl_dir = Path(custom_dir)
+        else:
+            # Otherwise, make it relative to the destination
+            dl_dir = dest_base / custom_dir
+
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        return dl_dir
+
+    if preserve_dir:
+        # Default to .preserve/dazzlelinks in the destination directory
+        dl_dir = preserve_dir / 'dazzlelinks'
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        return dl_dir
+
+    # If no preserve directory, create .dazzlelinks in the destination
+    dl_dir = dest_base / '.dazzlelinks'
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    return dl_dir
+
+
+def _show_directory_help_message(args, logger, src, operation="COPY", is_warning=False):
+    """Show helpful message when directory is used without --recursive flag.
+
+    Args:
+        args: Command arguments
+        logger: Logger instance
+        src: Source directory path
+        operation: Operation type (COPY or MOVE)
+        is_warning: If True, show as warning. If False, show as error.
+    """
+    # Use generic destination in examples to avoid exposing real paths
+    example_dst = "D:\\backup" if "\\" in str(args.dst) else "/backup"
+
+    log_func = logger.warning if is_warning else logger.error
+    action = "copied" if operation == "COPY" else "moved"
+
+    if is_warning:
+        log_func("")
+        log_func(f"WARNING: '{src}' contains subdirectories with files that will NOT be {action}.")
+        log_func("         Use --recursive flag to include files from subdirectories.")
+    else:
+        log_func("No source files found")
+        log_func("")
+        log_func(f"ERROR: '{src}' is a directory but --recursive flag was not specified.")
+        log_func("       The directory may be empty or contain only subdirectories.")
+
+    log_func("")
+    log_func(f"To {operation.lower()} all files from a directory, use one of these commands:")
+    log_func(f'  preserve {operation} "{src}" --recursive --dst "{example_dst}"')
+    log_func(f'  preserve {operation} "{src}" -r --dst "{example_dst}"')
+    log_func("")
+    log_func("Additional options you may want:")
+    log_func("  --includeBase : Include the source directory name in the destination")
+    log_func("  --rel         : Preserve relative directory structure")
+    log_func("  --abs         : Preserve absolute directory structure")
+
+    if not is_warning:
+        log_func("  --flat        : Copy all files directly to destination (no subdirectories)")
+        log_func("")
+        log_func("Example with common options:")
+        log_func(f'  preserve {operation} "{src}" --recursive --rel --includeBase --dst "{example_dst}"')
+    else:
+        log_func("")
