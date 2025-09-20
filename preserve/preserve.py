@@ -171,8 +171,53 @@ def main():
     parser = create_parser()
 
     # Handle --help specially to provide examples
-    if len(sys.argv) == 1 or '--help' in sys.argv or '-h' in sys.argv:
-        args = parser.parse_args([]) if len(sys.argv) == 1 else parser.parse_args()
+    if len(sys.argv) == 1:
+        # Show friendly help with examples when no arguments provided
+        print("""preserve v0.3.0 - A tool for preserving files with path normalization and verification
+
+This tool copies or moves files between locations while preserving their paths
+in a configurable way, maintaining file attributes, and providing verification.
+It supports bidirectional operations (restore) and can integrate with dazzlelink.
+
+Usage:
+    preserve OPERATION [OPTIONS] [SOURCES...] --dst DESTINATION
+
+Operations:
+    COPY               Copy files to destination with path preservation
+    MOVE               Copy files then remove originals after verification
+    VERIFY             Verify files against sources or stored hashes
+    RESTORE            Restore files to their original locations
+    CONFIG             View or modify configuration settings
+
+Examples:
+    # Copy all files from a directory (most common usage)
+    preserve COPY "C:/source/dir" --recursive --dst "D:/backup" --includeBase
+    preserve COPY "C:/source/dir" -r --rel --dst "D:/backup"  # With relative paths
+
+    # Copy files matching a glob pattern
+    preserve COPY --glob "*.txt" --srchPath "C:/data" --rel --dst "E:/backup"
+
+    # Copy with hash verification
+    preserve COPY --glob "*.jpg" --srchPath "D:/photos" --hash SHA256 --dst "E:/archive"
+
+    # Move files with absolute path preservation
+    preserve MOVE --glob "*.docx" --srchPath "C:/old" --abs --dst "D:/new"
+
+    # Load a list of files to copy from a text file
+    preserve COPY --loadIncludes "files_to_copy.txt" --dst "E:/backup"
+
+    # Verify files in destination against sources
+    preserve VERIFY --dst "E:/backup"
+
+    # Restore files to original locations
+    preserve RESTORE --src "E:/backup" --force
+
+Note: For detailed help on each operation, use: preserve COPY --help
+
+For more examples, use --help with a specific operation""")
+        return 0
+    elif '--help' in sys.argv or '-h' in sys.argv:
+        args = parser.parse_args()
         parser.print_help()
         return 0
 
