@@ -143,4 +143,5 @@ credentials.json
 /revisions/
 /test-runs/
 
-.claudetests/audits/
+.claude/
+tests/audits/

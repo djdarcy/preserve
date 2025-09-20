@@ -201,8 +201,6 @@ class TestCLIFunctionality(unittest.TestCase):
 
     def test_newer_than_functionality(self):
         """Test that --newer-than filters by date."""
-        # This test would require implementing the newer-than functionality
-        # For now, we'll create a placeholder
         args = self.parser.parse_args([
             'COPY',
             str(self.src_dir),
@@ -220,14 +218,73 @@ class TestCLIFunctionality(unittest.TestCase):
         files = find_files_from_args(args)
         file_names = [f.name for f in files]
 
-        # old_file.txt (10 days old) should be excluded if newer-than works
+        # old_file.txt (10 days old) should be excluded
         # All other files should be included (created just now)
-        # NOTE: This will only work if newer-than functionality is implemented
-        # self.assertNotIn('old_file.txt', file_names)
-        # self.assertIn('file1.txt', file_names)
+        self.assertNotIn('old_file.txt', file_names)
+        self.assertIn('file1.txt', file_names)
+        self.assertIn('file2.py', file_names)
 
-        # For now, just check that parsing works
+        # Verify parsing worked
         self.assertEqual(args.newer_than, '7d')
+
+    def test_newer_than_absolute_date(self):
+        """Test that --newer-than works with absolute dates."""
+        # Set a date 5 days ago
+        five_days_ago = time.time() - (5 * 24 * 60 * 60)
+        date_str = time.strftime('%Y-%m-%d', time.localtime(five_days_ago))
+
+        args = self.parser.parse_args([
+            'COPY',
+            str(self.src_dir),
+            '--dst', str(self.dst_dir),
+            '--newer-than', date_str
+        ])
+
+        # Add defaults
+        args.verbose = False
+        args.quiet = False
+        args.log = None
+        args.no_color = False
+
+        # Find files
+        files = find_files_from_args(args)
+        file_names = [f.name for f in files]
+
+        # old_file.txt (10 days old) should be excluded
+        # All other files (created just now) should be included
+        self.assertNotIn('old_file.txt', file_names)
+        self.assertIn('file1.txt', file_names)
+
+    def test_newer_than_hours(self):
+        """Test that --newer-than works with hours."""
+        # Create a file that's 2 hours old
+        two_hour_file = self.src_dir / 'two_hour_old.txt'
+        two_hour_file.write_text('2 hours old')
+        two_hours_ago = time.time() - (2 * 60 * 60)
+        os.utime(two_hour_file, (two_hours_ago, two_hours_ago))
+
+        args = self.parser.parse_args([
+            'COPY',
+            str(self.src_dir),
+            '--dst', str(self.dst_dir),
+            '--newer-than', '1h'  # Files newer than 1 hour
+        ])
+
+        # Add defaults
+        args.verbose = False
+        args.quiet = False
+        args.log = None
+        args.no_color = False
+
+        # Find files
+        files = find_files_from_args(args)
+        file_names = [f.name for f in files]
+
+        # Files older than 1 hour should be excluded
+        self.assertNotIn('two_hour_old.txt', file_names)
+        self.assertNotIn('old_file.txt', file_names)
+        # Recently created files should be included
+        self.assertIn('file1.txt', file_names)
 
     def test_glob_with_recursive(self):
         """Test that --glob with --recursive finds files in subdirectories."""

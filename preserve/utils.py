@@ -595,6 +595,40 @@ def is_within_directory(path: Union[str, Path], directory: Union[str, Path]) -> 
         return False
 
 
+def matches_exclude_pattern(file_path, patterns):
+    """
+    Check if file matches any exclude pattern.
+
+    Args:
+        file_path: Path object to check
+        patterns: List of pattern strings (glob-style)
+
+    Returns:
+        True if file matches any pattern, False otherwise
+    """
+    from fnmatch import fnmatch
+
+    # Convert to string for pattern matching
+    file_str = str(file_path)
+    file_name = file_path.name
+
+    for pattern in patterns:
+        # Check full path match (for patterns with / or \)
+        if '/' in pattern or os.sep in pattern:
+            # Pattern includes path separators, match against full path
+            if fnmatch(file_str, pattern):
+                return True
+            # Also try with forward slashes normalized (for cross-platform)
+            if fnmatch(file_str.replace(os.sep, '/'), pattern):
+                return True
+        else:
+            # Pattern without path separators, match against filename only
+            if fnmatch(file_name, pattern):
+                return True
+
+    return False
+
+
 # Check for dazzlelink availability
 try:
     from preserve import dazzlelink as preserve_dazzlelink
@@ -693,22 +727,12 @@ def find_files_from_args(args):
         except Exception as e:
             logger.error(f"Error loading includes from {args.loadIncludes}: {e}")
 
-    # Handle excludes and loadExcludes
-    exclude_paths = set()
+    # Handle excludes and loadExcludes with pattern matching
+    exclude_patterns = []
 
     if hasattr(args, 'exclude') and args.exclude:
-        for exclude in args.exclude:
-            excl_path = Path(exclude)
-            if excl_path.exists():
-                if excl_path.is_file():
-                    exclude_paths.add(excl_path)
-                elif excl_path.is_dir():
-                    # Add directory and all contents
-                    exclude_paths.add(excl_path)
-                    if hasattr(args, 'recursive') and args.recursive:
-                        for root, _, files in os.walk(excl_path):
-                            for file in files:
-                                exclude_paths.add(Path(root) / file)
+        # Add patterns from command line
+        exclude_patterns.extend(args.exclude)
 
     if hasattr(args, 'loadExcludes') and args.loadExcludes:
         try:
@@ -716,9 +740,7 @@ def find_files_from_args(args):
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith('#'):
-                        excl_path = Path(line)
-                        if excl_path.exists():
-                            exclude_paths.add(excl_path)
+                        exclude_patterns.append(line)
         except Exception as e:
             logger.error(f"Error loading excludes from {args.loadExcludes}: {e}")
 
@@ -730,8 +752,10 @@ def find_files_from_args(args):
         except Exception as e:
             logger.error(f"Error applying newer-than filter: {e}")
 
-    # Remove excluded files
-    source_files = [f for f in source_files if f not in exclude_paths]
+    # Apply exclude patterns
+    if exclude_patterns:
+        source_files = [f for f in source_files
+                       if not matches_exclude_pattern(f, exclude_patterns)]
 
     # Remove duplicates while preserving order
     unique_files = []

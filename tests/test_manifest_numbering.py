@@ -53,6 +53,33 @@ def create_test_args(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+class MockOperationResult:
+    """Mock result object for operation results."""
+    def __init__(self, success=0, failure=0, skip=0, verified=0, unverified=0):
+        self._success = success
+        self._failure = failure
+        self._skip = skip
+        self._verified = verified
+        self._unverified = unverified
+        self.skipped = []
+        self.error_messages = {}
+
+    def success_count(self):
+        return self._success
+
+    def failure_count(self):
+        return self._failure
+
+    def skip_count(self):
+        return self._skip
+
+    def verified_count(self):
+        return self._verified
+
+    def unverified_count(self):
+        return self._unverified
+
+
 class TestManifestNumbering(unittest.TestCase):
     """Test cases for manifest numbering system."""
 
@@ -439,14 +466,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         args.force = False
 
         # Mock restore operation
-        mock_result = MagicMock()
-        mock_result.success_count.return_value = 5
-        mock_result.failure_count.return_value = 0
-        mock_result.skip_count.return_value = 0
-        mock_result.skipped = []  # Empty list of skipped files
-        mock_result.error_messages = {}
-        mock_result.verified_count.return_value = 0
-        mock_result.unverified_count.return_value = 0
+        mock_result = MockOperationResult(success=5, failure=0, skip=0)
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:
@@ -488,14 +508,7 @@ class TestRestoreWithNumberedManifests(unittest.TestCase):
         args.force = False
 
         # Mock restore operation
-        mock_result = MagicMock()
-        mock_result.success_count.return_value = 5
-        mock_result.failure_count.return_value = 0
-        mock_result.skip_count.return_value = 0
-        mock_result.skipped = []  # Empty list of skipped files
-        mock_result.error_messages = {}
-        mock_result.verified_count.return_value = 0
-        mock_result.unverified_count.return_value = 0
+        mock_result = MockOperationResult(success=5, failure=0, skip=0)
         mock_ops.restore_operation.return_value = mock_result
 
         with patch('builtins.print') as mock_print:
