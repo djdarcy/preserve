@@ -642,6 +642,36 @@ except ImportError:
         preserve_dazzlelink = None
 
 
+def walk_with_max_depth(path, max_depth=None):
+    """Walk directory tree with optional depth limit.
+
+    Args:
+        path: Root path to start walking from
+        max_depth: Maximum depth to traverse (None for unlimited)
+
+    Yields:
+        (root, dirs, files) tuples like os.walk
+    """
+    path = Path(path)
+
+    if max_depth is None:
+        # No depth limit, use regular os.walk
+        yield from os.walk(path)
+        return
+
+    # Track depth by counting separators from base path
+    base_depth = str(path).count(os.sep)
+
+    for root, dirs, files in os.walk(path):
+        current_depth = str(root).count(os.sep) - base_depth
+
+        yield root, dirs, files
+
+        # If we've reached max depth, clear dirs to prevent deeper traversal
+        if current_depth >= max_depth:
+            dirs.clear()
+
+
 def find_files_from_args(args):
     """Find files based on command-line arguments"""
     source_files = []
@@ -655,7 +685,8 @@ def find_files_from_args(args):
                     source_files.append(src_path)
                 elif src_path.is_dir() and hasattr(args, 'recursive') and args.recursive:
                     # Recursively add all files in directory
-                    for root, _, files in os.walk(src_path):
+                    max_depth = getattr(args, 'max_depth', None)
+                    for root, _, files in walk_with_max_depth(src_path, max_depth):
                         for file in files:
                             source_files.append(Path(root) / file)
                 else:
@@ -690,7 +721,8 @@ def find_files_from_args(args):
             for search_path in search_paths:
                 if hasattr(args, 'recursive') and args.recursive:
                     # Recursive search
-                    for root, _, files in os.walk(search_path):
+                    max_depth = getattr(args, 'max_depth', None)
+                    for root, _, files in walk_with_max_depth(search_path, max_depth):
                         for file in files:
                             file_path = Path(root) / file
                             if any(p.search(str(file_path)) for p in patterns):

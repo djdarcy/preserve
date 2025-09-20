@@ -8,7 +8,7 @@ with path preservation, file verification, and detailed operation tracking.
 import logging
 
 # Version information
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
 # Set up package-level logger
 logger = logging.getLogger(__name__)

@@ -57,9 +57,9 @@ from .utils import (
 )
 
 # Version information
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __doc__ = """
-preserve v0.3.0 - Cross-platform file preservation with verification and restoration
+preserve v0.4.0 - Cross-platform file preservation with verification and restoration
 
 Examples:
     # Copy all files from a directory (most common usage)

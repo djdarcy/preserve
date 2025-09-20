@@ -10,6 +10,7 @@ import argparse
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
+from types import SimpleNamespace
 from io import StringIO
 
 # Add parent directory to path
@@ -97,7 +98,11 @@ class TestVerifyCliCommand(unittest.TestCase):
 
         # Mock the verification to succeed
         with patch('preservelib.verification.find_and_verify_manifest') as mock_verify:
-            manifest = MagicMock()
+            # Use SimpleNamespace for manifest to avoid MagicMock directory creation
+            manifest = SimpleNamespace(
+                manifest_dir=self.preserved_dir,
+                manifest_path=self.preserved_dir / "preserve_manifest.json"
+            )
             result = MagicMock()
             result.verified_count = 1
             result.failed_count = 0
@@ -148,7 +153,8 @@ class TestVerifyCliCommand(unittest.TestCase):
 
         # Mock the three-way verification result
         mock_result = MagicMock()
-        mock_result.all_match = [MagicMock()]
+        mock_file_result = SimpleNamespace(file_path=self.source_dir / "test.txt")
+        mock_result.all_match = [mock_file_result]
         mock_result.source_modified = []
         mock_result.preserved_corrupted = []
         mock_result.errors = []
@@ -244,7 +250,8 @@ class TestVerifyCliCommand(unittest.TestCase):
         # Mock the three-way verification result with modified source
         mock_result = MagicMock()
         mock_result.all_match = []
-        mock_result.source_modified = [MagicMock(file_path=source_file)]
+        mock_file_result = SimpleNamespace(file_path=source_file)
+        mock_result.source_modified = [mock_file_result]
         mock_result.preserved_corrupted = []
         mock_result.errors = []
         mock_result.not_found = []
@@ -296,7 +303,8 @@ class TestVerifyCliCommand(unittest.TestCase):
         mock_result = MagicMock()
         mock_result.all_match = []
         mock_result.source_modified = []
-        mock_result.preserved_corrupted = [MagicMock(file_path=preserved_file)]
+        mock_file_result = SimpleNamespace(file_path=preserved_file)
+        mock_result.preserved_corrupted = [mock_file_result]
         mock_result.errors = []
         mock_result.not_found = []
         mock_verify_three_way.return_value = mock_result
@@ -344,8 +352,10 @@ class TestVerifyCliCommand(unittest.TestCase):
         )
 
         # Mock the three-way verification result with complex difference
-        mock_error = MagicMock()
-        mock_error.error_message = f"Complex difference: {source_file}"
+        mock_error = SimpleNamespace(
+            error_message=f"Complex difference: {source_file}",
+            file_path=source_file
+        )
         mock_result = MagicMock()
         mock_result.all_match = []
         mock_result.source_modified = []
