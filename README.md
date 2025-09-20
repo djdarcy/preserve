@@ -1,8 +1,11 @@
-# Preserve (v0.5.0)
+# Preserve
 
-A cross-platform file preservation tool with path normalization and verification.
+[![Version](https://img.shields.io/github/v/release/djdarcy/preserve)](https://github.com/djdarcy/preserve/releases)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-GPL%20v3-green.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/username/preserve/releases/tag/v0.5.0)
+A cross-platform file preservation tool with path normalization, verification, and restoration capabilities.
 
 ## Features
 
@@ -174,54 +177,40 @@ For critical data, it's recommended to follow a secure multi-step workflow:
 
 See the documentation for more details on secure workflows.
 
-## What's New in v0.5.0
+## What's New
 
-- **GitRepoKit Versioning System**: Integrated automated version management with git hooks
-  - Version format: `VERSION_BRANCH_BUILD-YYYYMMDD-COMMITHASH` (e.g., `0.5.0_main_23-20250920-abc12345`)
-  - Automatic version updates on every commit via pre-commit hooks
-  - Full build traceability with branch, build number, date, and commit hash
-  - PEP 440 compliant versions for pip/setuptools compatibility
-  - Run `./scripts/install-hooks.sh` to enable automatic versioning
-- **Version Command**: Run `preserve --version` to see full version details
-- **Single Source of Truth**: All version references now come from `preserve/version.py`
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
 
-## What's New in v0.4.0
+### Latest Release (v0.5.x)
 
-- **Advanced Filtering**: Added `--exclude` pattern support for glob-based file exclusion
-- **Depth Control**: Added `--max-depth` option for limiting directory traversal depth
-- **Time-Based Selection**: Enhanced `--newer-than` with support for:
-  - Relative times: `--newer-than "2 hours"`, `--newer-than "30 days"`
-  - Absolute dates: `--newer-than "2025-01-15"`, `--newer-than "2025-01-15 14:30:00"`
-  - Unix timestamps: `--newer-than "1736899200"`
-- **Bug Fixes**:
-  - Fixed MagicMock directory creation in tests
-  - Corrected version display to show actual version
+This is a maintenance development cycle. The current goal is stabilize and fully test all major uses of preserve (COPY, MOVE, RESTORE, and VERIFY) with no missing flags / functionality before 0.6.x.
 
-## What's New in v0.3.0
+### Recent Highlights
+- **Advanced Filtering**: Exclude patterns, depth control, time-based selection
+- **Three-Way Verification**: Source, destination, or both forms of verifications during restore operations
+- **Sequential Manifests**: Support for multiple operations to same destination
+- **GitRepoKit Versioning**: Automated version management with git hooks
+- **Document Tidying**: Improving versioning, README, CHANGELOG, and other docs
 
-- **Three-Way Verification**: Added `--verify` flag to RESTORE operation for comprehensive verification before restoration
-- **Numbered Manifest Support**: VERIFY command now fully supports the numbered manifest system (_001, _002, etc.)
-- **Architecture Improvements**: Clarified ownership of hashing functions - preservelib owns the main implementation
-- **Enhanced Help System**: Improved command documentation and examples
-- **Bug Fixes**: Fixed path resolution issues in verification, corrected double-adding to result lists
-- Improved relative path mode fallback behavior: now falls back to absolute path style (preserving structure) instead of flat structure when no common base directory can be found
-- Enhanced logging for path resolution to make fallback behavior clearer
-- Added test script for relative path fallback scenarios
+## Contributing
 
-## What's New in v0.2.0
+Contributions are welcome! Feel free to submit a pull request.
 
-- Fixed relative path mode (`--rel`) to properly preserve directory structure
-- Improved path detection and common base directory finding
-- Fixed RESTORE operation for all path modes
-- Enhanced debugging and error reporting
-- Fixed duplicate log messages
-- Added verification report generation
+Like the project?
+
+[!["Buy Me A Coffee"](https://camo.githubusercontent.com/0b448aabee402aaf7b3b256ae471e7dc66bcf174fad7d6bb52b27138b2364e47/68747470733a2f2f7777772e6275796d6561636f666665652e636f6d2f6173736574732f696d672f637573746f6d5f696d616765732f6f72616e67655f696d672e706e67)](https://www.buymeacoffee.com/djdarcy)
+
+## Acknowledgments
+
+- [dazzlelink](https://github.com/djdarcy/dazzlelink) - Enhanced metadata storage and file references
+- [GitRepoKit](https://github.com/djdarcy/GitRepoKit) - Automated version management system
+- Community contributors - Testing, feedback, and improvements
 
 ## License
 
 preserve, aka preserve.py, Copyright (C) 2025 Dustin Darcy
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 

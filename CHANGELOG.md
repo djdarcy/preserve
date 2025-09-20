@@ -6,11 +6,68 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [Unreleased]
 
-### Fixed
-- **Critical**: Fixed manifest overwriting bug when multiple operations target the same destination (#4)
-- Directory operations without --recursive flag now show helpful error messages
+## [0.5.1] - 2025-09-20
+
+### Changed
+- Separated changelog from README for better organization (#14)
+- README now references CHANGELOG.md for version history
+- Enhanced README with improved badges showing version, Python support, license, and platform compatibility
+
+### Improved
+- README structure focuses on features and usage
+- Version badges now link to proper GitHub repository
+- Added Python version requirement badge (3.8+)
+- Added platform compatibility badge
+
+## [0.5.0] - 2025-09-20
 
 ### Added
+- **GitRepoKit Versioning System**: Integrated automated version management with git hooks
+  - Version format: `VERSION_BRANCH_BUILD-YYYYMMDD-COMMITHASH` (e.g., `0.5.0_main_23-20250920-abc12345`)
+  - Automatic version updates on every commit via pre-commit hooks
+  - Full build traceability with branch, build number, date, and commit hash
+  - PEP 440 compliant versions for pip/setuptools compatibility
+  - Run `./scripts/install-hooks.sh` to enable automatic versioning
+- **Version Command**: Run `preserve --version` to see full version details
+- **Single Source of Truth**: All version references now come from `preserve/version.py`
+
+### Fixed
+- Help system duplication when running `preserve` with no arguments (#15)
+- Help system regression from previous versions (#19)
+- Hardcoded version "0.3.0" in CLI description now uses dynamic version
+
+### Added
+- Test coverage for CLI help system to prevent regressions
+- Module entry point (`__main__.py`) for `python -m preserve` support
+- Three-level help system:
+  1. `preserve` (no args) - Friendly introduction with examples
+  2. `preserve -h` - Standard argparse help with examples in epilog
+  3. `preserve COMMAND --help` - Command-specific help with examples
+
+### Improved
+- Help examples reorganized with most common use case first
+- Command help now shows examples at bottom (epilog) instead of top
+- Example commands show flags in logical order for easy copy-paste
+
+## [0.4.0] - 2025-09-19
+
+### Added
+- **Advanced Filtering**: Added `--exclude` pattern support for glob-based file exclusion
+- **Depth Control**: Added `--max-depth` option for limiting directory traversal depth
+- **Time-Based Selection**: Enhanced `--newer-than` with support for:
+  - Relative times: `--newer-than "2 hours"`, `--newer-than "30 days"`
+  - Absolute dates: `--newer-than "2025-01-15"`, `--newer-than "2025-01-15 14:30:00"`
+  - Unix timestamps: `--newer-than "1736899200"`
+
+### Fixed
+- MagicMock directory creation in tests
+- Version display now shows actual version instead of placeholder
+
+## [0.3.0] - 2025-09-18
+
+### Added
+- **Three-Way Verification**: Added `--verify` flag to RESTORE operation for comprehensive verification before restoration
+- **Numbered Manifest Support**: VERIFY command now fully supports the numbered manifest system (_001, _002, etc.)
 - Sequential manifest numbering system (preserve_manifest_001.json, _002, etc.)
 - RESTORE --list option to show all available restore points
 - RESTORE --number/-n option to restore from specific operation
@@ -18,7 +75,15 @@ All notable changes to this project will be documented in this file. This projec
 - Colored terminal output for warnings and errors (with graceful fallback)
 - Auto-migration of existing single manifests to numbered format
 
+### Fixed
+- **Critical**: Fixed manifest overwriting bug when multiple operations target the same destination (#4)
+- Path resolution issues in verification
+- Double-adding to result lists bug
+- Directory operations without --recursive flag now show helpful error messages
+
 ### Improved
+- **Architecture**: Clarified ownership of hashing functions - preservelib owns the main implementation
+- **Enhanced Help System**: Improved command documentation and examples
 - RESTORE command now defaults to latest manifest when multiple exist
 - Help text for COPY/MOVE operations with common usage examples
 - Error messages for Windows path escaping issues
