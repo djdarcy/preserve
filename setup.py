@@ -9,9 +9,14 @@ from setuptools import setup, find_packages
 with open(os.path.join(os.path.dirname(__file__), 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
+# Read version from version.py
+version_file = os.path.join(os.path.dirname(__file__), 'preserve', 'version.py')
+with open(version_file) as f:
+    exec(f.read())
+
 setup(
     name="preserve",
-    version="0.4.0",
+    version=get_pip_version() if 'get_pip_version' in locals() else "0.4.0",
     description="A tool for preserving files with path normalization and verification",
     long_description=long_description,
     long_description_content_type="text/markdown",

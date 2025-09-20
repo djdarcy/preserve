@@ -1,8 +1,8 @@
-# Preserve (v0.3.0)
+# Preserve (v0.5.0)
 
 A cross-platform file preservation tool with path normalization and verification.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/username/preserve/releases/tag/v0.3.0)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/username/preserve/releases/tag/v0.5.0)
 
 ## Features
 
@@ -174,6 +174,29 @@ For critical data, it's recommended to follow a secure multi-step workflow:
 
 See the documentation for more details on secure workflows.
 
+## What's New in v0.5.0
+
+- **GitRepoKit Versioning System**: Integrated automated version management with git hooks
+  - Version format: `VERSION_BRANCH_BUILD-YYYYMMDD-COMMITHASH` (e.g., `0.5.0_main_23-20250920-abc12345`)
+  - Automatic version updates on every commit via pre-commit hooks
+  - Full build traceability with branch, build number, date, and commit hash
+  - PEP 440 compliant versions for pip/setuptools compatibility
+  - Run `./scripts/install-hooks.sh` to enable automatic versioning
+- **Version Command**: Run `preserve --version` to see full version details
+- **Single Source of Truth**: All version references now come from `preserve/version.py`
+
+## What's New in v0.4.0
+
+- **Advanced Filtering**: Added `--exclude` pattern support for glob-based file exclusion
+- **Depth Control**: Added `--max-depth` option for limiting directory traversal depth
+- **Time-Based Selection**: Enhanced `--newer-than` with support for:
+  - Relative times: `--newer-than "2 hours"`, `--newer-than "30 days"`
+  - Absolute dates: `--newer-than "2025-01-15"`, `--newer-than "2025-01-15 14:30:00"`
+  - Unix timestamps: `--newer-than "1736899200"`
+- **Bug Fixes**:
+  - Fixed MagicMock directory creation in tests
+  - Corrected version display to show actual version
+
 ## What's New in v0.3.0
 
 - **Three-Way Verification**: Added `--verify` flag to RESTORE operation for comprehensive verification before restoration
@@ -181,9 +204,6 @@ See the documentation for more details on secure workflows.
 - **Architecture Improvements**: Clarified ownership of hashing functions - preservelib owns the main implementation
 - **Enhanced Help System**: Improved command documentation and examples
 - **Bug Fixes**: Fixed path resolution issues in verification, corrected double-adding to result lists
-
-## What's New in v0.2.1
-
 - Improved relative path mode fallback behavior: now falls back to absolute path style (preserving structure) instead of flat structure when no common base directory can be found
 - Enhanced logging for path resolution to make fallback behavior clearer
 - Added test script for relative path fallback scenarios

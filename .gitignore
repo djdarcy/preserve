@@ -145,3 +145,7 @@ credentials.json
 
 .claude/
 tests/audits/
+
+# GitRepoKit version management
+preserve/version.py.backup
+*.py.backup

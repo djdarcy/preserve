@@ -44,7 +44,12 @@ from .restore import (
     find_restoreable_files
 )
 
-__version__ = '0.4.0'
+# Import version from preserve package
+try:
+    from preserve.version import __version__
+except ImportError:
+    # Fallback if preserve package is not installed
+    __version__ = '0.4.0'
 
 def configure_logging(level=logging.INFO, log_file=None):
     """

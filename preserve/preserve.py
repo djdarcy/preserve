@@ -56,10 +56,10 @@ from .utils import (
     _show_directory_help_message
 )
 
-# Version information
-__version__ = "0.4.0"
-__doc__ = """
-preserve v0.4.0 - Cross-platform file preservation with verification and restoration
+# Import version information from version.py
+from .version import __version__, get_version, get_base_version
+__doc__ = f"""
+preserve v{get_base_version()} - Cross-platform file preservation with verification and restoration
 
 Examples:
     # Copy all files from a directory (most common usage)
@@ -173,7 +173,7 @@ def main():
     # Handle --help specially to provide examples
     if len(sys.argv) == 1:
         # Show friendly help with examples when no arguments provided
-        print("""preserve v0.3.0 - A tool for preserving files with path normalization and verification
+        print(f"""preserve v{get_base_version()} - A tool for preserving files with path normalization and verification
 
 This tool copies or moves files between locations while preserving their paths
 in a configurable way, maintaining file attributes, and providing verification.
