@@ -87,7 +87,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Mock the verification to succeed
@@ -135,7 +138,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Mock the three-way verification result
@@ -183,7 +189,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Run verification
@@ -225,7 +234,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Mock the three-way verification result with modified source
@@ -273,7 +285,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Mock the three-way verification result with corrupted preserved
@@ -321,7 +336,10 @@ class TestVerifyCliCommand(unittest.TestCase):
             list=False,
             hash=["SHA256"],
             report=None,
-            verbose=False
+            verbose=False,
+            check=None,  # New parameter
+            auto=False,  # New parameter
+            alt_src=None  # New parameter
         )
 
         # Mock the three-way verification result with complex difference

@@ -749,26 +749,83 @@ def _process_directory_for_manifest(manifest: PreserveManifest, source_dir: Path
             )
 
 
+def extract_source_from_manifest(manifest: PreserveManifest) -> Optional[Path]:
+    """
+    Extract the source location from a manifest.
+
+    Tries multiple strategies:
+    1. Look for source_base in operations
+    2. Find common prefix of all source_path entries
+    3. Use parent of first source file as fallback
+
+    Args:
+        manifest: The manifest to extract source from
+
+    Returns:
+        Path to source location, or None if not found
+    """
+    # Handle both PreserveManifest objects and dict objects
+    if isinstance(manifest, dict):
+        manifest_data = manifest
+    else:
+        manifest_data = manifest.manifest
+
+    # Strategy 1: Check for source_base in operations
+    for op in manifest_data.get("operations", []):
+        options = op.get("options", {})
+        if "source_base" in options and options["source_base"]:
+            source_base = Path(options["source_base"])
+            logger.debug(f"Found source_base in manifest: {source_base}")
+            return source_base
+
+    # Strategy 2: Find common prefix of all source paths
+    source_paths = []
+    for file_info in manifest_data.get("files", {}).values():
+        if "source_path" in file_info:
+            source_paths.append(Path(file_info["source_path"]))
+
+    if not source_paths:
+        logger.debug("No source paths found in manifest")
+        return None
+
+    if len(source_paths) == 1:
+        # Single file - return its parent directory
+        return source_paths[0].parent
+
+    try:
+        # Find common path for multiple files
+        import os
+        common = os.path.commonpath([str(p) for p in source_paths])
+        common_path = Path(common)
+        logger.debug(f"Found common source prefix: {common_path}")
+        return common_path
+    except ValueError:
+        # No common path (e.g., different drives on Windows)
+        # Use parent of first file as best guess
+        logger.debug("No common path found, using first file's parent")
+        return source_paths[0].parent
+
+
 def read_manifest(path: Union[str, Path]) -> Optional[PreserveManifest]:
     """
     Read a manifest from a file.
-    
+
     Args:
         path: Path to the manifest file
-        
+
     Returns:
         Manifest object, or None if the file does not exist or is invalid
     """
     try:
         manifest = PreserveManifest(path)
         valid, errors = manifest.validate()
-        
+
         if not valid:
             logger.warning(f"Invalid manifest: {path}")
             for error in errors:
                 logger.warning(f"  {error}")
             return None
-        
+
         return manifest
     except Exception as e:
         logger.error(f"Error reading manifest: {e}")
