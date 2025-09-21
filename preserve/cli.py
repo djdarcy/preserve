@@ -11,6 +11,22 @@ from preserve.version import get_base_version
 from preserve.help import examples
 
 
+def create_common_parent():
+    """Create parent parser with common arguments for all operations"""
+    parent = argparse.ArgumentParser(add_help=False)
+
+    # Verbosity control arguments that all operations should have
+    parent.add_argument('-v', '--verbose', action='count', default=0,
+                       help='Increase output verbosity (use -vv or -vvv for more detail)')
+    parent.add_argument('--quiet', '-q', action='store_true',
+                       help='Suppress all output except errors')
+    parent.add_argument('--no-color', action='store_true',
+                       help='Disable colored output')
+    parent.add_argument('--log', help='Write log to specified file')
+
+    return parent
+
+
 def create_parser():
     """Create argument parser with all CLI options"""
     epilog_text = """Examples:
@@ -46,22 +62,19 @@ For more examples, use --help with a specific operation"""
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    # General options
+    # General options (only version, which doesn't go in operations)
     parser.add_argument('--version', '-V', action='version',
                         version=f'preserve {__version__}')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable verbose output')
-    parser.add_argument('--quiet', '-q', action='store_true',
-                        help='Suppress all non-error output')
-    parser.add_argument('--log', help='Write log to specified file')
-    parser.add_argument('--no-color', action='store_true',
-                       help='Disable colored output')
+
+    # Create parent parser with common arguments
+    common_parent = create_common_parent()
 
     # Create subparsers for operations
     subparsers = parser.add_subparsers(dest='operation', help='Operation to perform')
 
     # === COPY operation ===
     copy_parser = subparsers.add_parser('COPY',
+                                       parents=[common_parent],
                                        help='Copy files to destination with path preservation',
                                        description='Copy files to destination with path preservation.',
                                        epilog='''Common usage patterns:
@@ -95,6 +108,7 @@ Note: When copying directories, --recursive (-r) is required to include files in
 
     # === MOVE operation ===
     move_parser = subparsers.add_parser('MOVE',
+                                       parents=[common_parent],
                                        help='Copy files then remove originals after verification',
                                        description='Move files to destination (copy then delete originals after verification).',
                                        epilog='''Common usage patterns:
@@ -129,6 +143,7 @@ Note: When moving directories, --recursive (-r) is required to include files in 
 
     # === VERIFY operation ===
     verify_parser = subparsers.add_parser('VERIFY',
+                                          parents=[common_parent],
                                           help='Check integrity of preserved files against their manifest hashes',
                                           description='Verify that preserved files have not been corrupted or modified since preservation. '
                                                      'Compares current file hashes against those recorded in the manifest. '
@@ -176,6 +191,7 @@ Note: When moving directories, --recursive (-r) is required to include files in 
 
     # === RESTORE operation ===
     restore_parser = subparsers.add_parser('RESTORE',
+                                          parents=[common_parent],
                                           help='Restore preserved files back to their original locations',
                                           description='Restore preserved files back to their original locations based on the manifest.',
                                           epilog='''Examples:
@@ -216,10 +232,12 @@ Note: When moving directories, --recursive (-r) is required to include files in 
                                help='Verify files before restoration (three-way comparison)')
     restore_parser.add_argument('--selective',
                                help='Only restore files matching pattern (e.g., "*.txt" or "path/to/*")')
+
     _add_dazzlelink_args(restore_parser)
 
     # === CONFIG operation ===
     config_parser = subparsers.add_parser('CONFIG',
+                                         parents=[common_parent],
                                          help='View or modify configuration settings',
                                          description='View or modify preserve configuration settings.',
                                          epilog='''Examples:

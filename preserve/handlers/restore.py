@@ -11,20 +11,34 @@ TODO: Future refactoring opportunities:
 - Consider creating a ManifestSelector class for manifest discovery
 """
 
+import os
 import sys
 import logging
 from pathlib import Path
 
 from preservelib import operations
 from preservelib.manifest import PreserveManifest, find_available_manifests
-from preserve.utils import get_hash_algorithms
+from preserve.utils import get_hash_algorithms, get_effective_verbosity
+from preserve.output import configure_formatter, VerbosityLevel
 
 logger = logging.getLogger(__name__)
 
 
 def handle_restore_operation(args, logger):
     """Handle RESTORE operation with support for multiple manifests"""
-    logger.info("Starting RESTORE operation")
+
+    # Get unified verbosity level
+    verbosity = get_effective_verbosity(args)
+
+    formatter = configure_formatter(
+        verbosity=verbosity,
+        use_color=not (hasattr(args, 'no_color') and args.no_color),
+        use_unicode=True
+    )
+
+    # Only log at verbose levels
+    if verbosity >= VerbosityLevel.VERBOSE:
+        logger.info("Starting RESTORE operation")
     logger.debug(f"[DEBUG] RESTORE called with args: {args}")
 
     # Get source path
@@ -87,7 +101,8 @@ def handle_restore_operation(args, logger):
         for num, path, desc in manifests:
             if num == args.number:
                 manifest_path = path
-                logger.info(f"Selected manifest #{num}: {path.name}")
+                if verbosity >= VerbosityLevel.VERBOSE:
+                    logger.info(f"Selected manifest #{num}: {path.name}")
                 break
         else:
             logger.error(f"No manifest found with number {args.number}")
@@ -98,7 +113,8 @@ def handle_restore_operation(args, logger):
         if manifests:
             # Take the last one (highest number)
             manifest_path = manifests[-1][1]
-            logger.info(f"Using latest manifest: {manifest_path.name}")
+            if verbosity >= VerbosityLevel.VERBOSE:
+                logger.info(f"Using latest manifest: {manifest_path.name}")
         else:
             # Fall back to old logic for compatibility
             potential_manifests = [
@@ -117,7 +133,8 @@ def handle_restore_operation(args, logger):
         try:
             # Just verify the manifest exists and is valid
             test_man = PreserveManifest(manifest_path)
-            logger.info(f"Found valid manifest at {manifest_path}")
+            if verbosity >= VerbosityLevel.VERBOSE:
+                logger.info(f"Found valid manifest at {manifest_path}")
         except Exception as e:
             logger.warning(f"Found manifest at {manifest_path}, but it is invalid: {e}")
             manifest_path = None
@@ -147,7 +164,8 @@ def handle_restore_operation(args, logger):
         'dry_run': args.dry_run if hasattr(args, 'dry_run') else False,
         'force': args.force if hasattr(args, 'force') else False,
         'use_dazzlelinks': use_dazzlelinks,
-        'destination_override': args.dst if hasattr(args, 'dst') and args.dst else None
+        'destination_override': args.dst if hasattr(args, 'dst') and args.dst else None,
+        'formatter': formatter  # Pass the formatter to operations
     }
 
     logger.debug(f"[DEBUG] RESTORE options: {options}")
@@ -157,7 +175,8 @@ def handle_restore_operation(args, logger):
 
     # Perform three-way verification if requested
     if hasattr(args, 'verify') and args.verify and manifest_path:
-        logger.info("Performing three-way verification before restoration...")
+        if verbosity >= VerbosityLevel.VERBOSE:
+            logger.info("Performing three-way verification before restoration...")
 
         # Load the manifest
         try:
@@ -174,7 +193,8 @@ def handle_restore_operation(args, logger):
                     # Try to find common parent of source files
                     if source_orig.is_absolute():
                         # For absolute paths, we need to find the actual source
-                        logger.info(f"Source path from manifest: {source_orig}")
+                        if verbosity >= VerbosityLevel.VERBOSE:
+                            logger.info(f"Source path from manifest: {source_orig}")
                         # Check if parent directories exist
                         possible_source = source_orig.parent
                         while not possible_source.exists() and possible_source.parent != possible_source:
@@ -249,45 +269,55 @@ def handle_restore_operation(args, logger):
         command_line=command_line
     )
 
-    # Print summary
-    print("\nRESTORE Operation Summary:")
-    print(f"  Total files: {result.total_count()}")
-    print(f"  Succeeded: {result.success_count()}")
-    print(f"  Failed: {result.failure_count()}")
-    print(f"  Skipped: {result.skip_count()}")
+    # Print summary using formatter
+    summary = formatter.format_summary("RESTORE")
+    if summary:
+        print(summary)
 
-    # Print detailed skipped file info
-    if result.skip_count() > 0:
-        print("\nSkipped Files (first 10):")
+    # Print detailed skipped file info only if verbose enough
+    # In quiet mode or normal mode, don't show the detailed list
+    if verbosity >= VerbosityLevel.VERBOSE and result.skip_count() > 0:
+        # At -v, show just a few examples
+        # At -vv or higher, show more details
+        max_to_show = 3 if verbosity == VerbosityLevel.VERBOSE else 10
+
+        print(f"\nSkipped Files (first {max_to_show}):")
         skip_count = 0
         for source, dest in result.skipped:
             reason = result.error_messages.get(source, "Unknown reason")
-            # Check if source file exists and show more details
-            source_exists = Path(source).exists()
-            print(f"  {source} -> {dest}")
-            print(f"    Reason: {reason}")
-            print(f"    Source exists: {source_exists}")
-            if not source_exists:
-                # Check if we can find the file in a subdirectory of the source
-                source_dir = Path(args.src)
-                filename = Path(source).name
-                matching_files = list(source_dir.glob(f"**/{filename}"))
-                if matching_files:
-                    print(f"    Found similar files:")
-                    for i, match in enumerate(matching_files[:3]):
-                        print(f"      {match}")
-                    if len(matching_files) > 3:
-                        print(f"      ... and {len(matching_files) - 3} more")
-                else:
-                    print(f"    No similar files found")
-            print("")
+
+            # At -v, just show the file and reason
+            if verbosity == VerbosityLevel.VERBOSE:
+                print(f"  {os.path.basename(dest)}: {reason}")
+            else:
+                # At -vv or higher, show full details
+                source_exists = Path(source).exists()
+                print(f"  {source} -> {dest}")
+                print(f"    Reason: {reason}")
+                print(f"    Source exists: {source_exists}")
+                if not source_exists and verbosity >= VerbosityLevel.DETAILED:
+                    # Only show file search at -vv or higher
+                    source_dir = Path(args.src)
+                    filename = Path(source).name
+                    matching_files = list(source_dir.glob(f"**/{filename}"))
+                    if matching_files:
+                        print(f"    Found similar files:")
+                        for i, match in enumerate(matching_files[:3]):
+                            print(f"      {match}")
+                        if len(matching_files) > 3:
+                            print(f"      ... and {len(matching_files) - 3} more")
+                    else:
+                        print(f"    No similar files found")
+                print("")
+
             skip_count += 1
-            if skip_count >= 10:
-                if result.skip_count() > 10:
-                    print(f"  ... and {result.skip_count() - 10} more")
+            if skip_count >= max_to_show:
+                if result.skip_count() > max_to_show:
+                    print(f"  ... and {result.skip_count() - max_to_show} more")
                 break
 
-    if options['verify']:
+    # Show verification counts only if verify was enabled and not in quiet mode
+    if options['verify'] and verbosity > VerbosityLevel.QUIET:
         print(f"  Verified: {result.verified_count()}")
         print(f"  Unverified: {result.unverified_count()}")
 

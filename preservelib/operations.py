@@ -1151,6 +1151,7 @@ def restore_operation(
         "force": False,  # Force restoration even if verification fails
         "use_dazzlelinks": True,  # Use dazzlelinks if no manifest found
         "destination_override": None,  # Override destination path for restoration
+        "formatter": None,  # Output formatter for progress display
     }
 
     # Merge with provided options
@@ -1158,6 +1159,15 @@ def restore_operation(
         default_options.update(options)
 
     options = default_options
+
+    # Get formatter if provided
+    formatter = options.get('formatter')
+    if formatter:
+        # Import here to avoid circular dependencies
+        from preserve.output import get_formatter
+        # If no formatter provided, get the global one
+        if formatter is None:
+            formatter = get_formatter()
 
     # Initialize operation result
     result = OperationResult("RESTORE", command_line)
@@ -1246,18 +1256,31 @@ def restore_operation(
         result.add_failure("", "", "No manifest or dazzlelinks found")
         return result
 
-    # Create new operation in manifest
+    # Create new operation in manifest (excluding formatter)
+    manifest_options = {k: v for k, v in options.items() if k != 'formatter'}
     operation_id = manifest.add_operation(
         operation_type="RESTORE",
         source_path=str(source_directory),
-        options=options,
+        options=manifest_options,
         command_line=command_line,
     )
 
     # Process each file in manifest
     from .restore import restore_file_to_original
 
-    for file_id, file_info in manifest.get_all_files().items():
+    # Get total file count for progress
+    all_files = manifest.get_all_files()
+    total_files = len(all_files)
+    current_file_num = 0
+
+    # Show header if formatter available
+    if formatter:
+        header = formatter.format_header(f"Restoring {total_files} files...")
+        if header:
+            print(header)
+
+    for file_id, file_info in all_files.items():
+        current_file_num += 1
         source_orig_path = file_info.get("source_path")
         dest_orig_path = file_info.get("destination_path")
 
@@ -1273,15 +1296,15 @@ def restore_operation(
             original_path = Path(
                 str(source_orig_path).replace("\\", "/")
             )  # Restore to the same path
-            print(
-                f"RESTORE DEBUG (dazzlelink): current={current_path}, original={original_path}"
+            logger.debug(
+                f"RESTORE (dazzlelink): current={current_path}, original={original_path}"
             )
         else:
             # Normal manifest case
             current_path = Path(str(dest_orig_path).replace("\\", "/"))
             original_path = Path(str(source_orig_path).replace("\\", "/"))
-            print(
-                f"RESTORE DEBUG (manifest): current={current_path}, original={original_path}"
+            logger.debug(
+                f"RESTORE (manifest): current={current_path}, original={original_path}"
             )
 
         # Make absolute if needed but avoid double-prefixing with source_dir_path
@@ -1294,15 +1317,15 @@ def restore_operation(
                 source_dir_str = str(source_dir_path)
                 source_dir_name = Path(source_dir_path).name
 
-                print(
-                    f"RESTORE DEBUG: Processing path: {current_path_str}, source dir: {source_dir_str}, source dir name: {source_dir_name}"
+                logger.debug(
+                    f"RESTORE: Processing path: {current_path_str}, source dir: {source_dir_str}, source dir name: {source_dir_name}"
                 )
 
                 # Check if the current_path already includes source_dir_path
                 if current_path_str.startswith(source_dir_str):
                     # Already includes the source_dir, don't add it again
-                    print(
-                        f"RESTORE DEBUG: Path already includes source directory, using as is: {current_path}"
+                    logger.debug(
+                        f"RESTORE: Path already includes source directory, using as is: {current_path}"
                     )
                 else:
                     # First try to find the source directory name in the path
@@ -1317,14 +1340,14 @@ def restore_operation(
                             # Keep only the part after the source directory name
                             relevant_path = "\\".join(path_parts[dir_index + 1 :])
                             current_path = source_dir_path / relevant_path
-                            print(
-                                f"RESTORE DEBUG: Extracted path after {source_dir_name}: {current_path}"
+                            logger.debug(
+                                f"RESTORE: Extracted path after {source_dir_name}: {current_path}"
                             )
                         else:
                             # Just use the source_dir as is if there's nothing after it
                             current_path = source_dir_path
-                            print(
-                                f"RESTORE DEBUG: Using source directory as is: {current_path}"
+                            logger.debug(
+                                f"RESTORE: Using source directory as is: {current_path}"
                             )
                     else:
                         # Check for any known destination directory names that might be in the path
@@ -1349,8 +1372,8 @@ def restore_operation(
                                         path_parts[dir_index + 1 :]
                                     )
                                     current_path = source_dir_path / relevant_path
-                                    print(
-                                        f"RESTORE DEBUG: Extracted path after known directory {dest_dir}: {current_path}"
+                                    logger.debug(
+                                        f"RESTORE: Extracted path after known directory {dest_dir}: {current_path}"
                                     )
                                     found_dir = True
                                     break
@@ -1358,31 +1381,40 @@ def restore_operation(
                         # If no known directory pattern found, just append to source directory
                         if not found_dir:
                             current_path = source_dir_path / current_path
-                            print(
-                                f"RESTORE DEBUG: No known directory pattern found, appending to source directory: {current_path}"
+                            logger.debug(
+                                f"RESTORE: No known directory pattern found, appending to source directory: {current_path}"
                             )
 
             except Exception as e:
                 # In case of any errors, fall back to the original behavior
-                print(
-                    f"RESTORE DEBUG: Error processing path, using default resolution: {e}"
+                logger.debug(
+                    f"RESTORE: Error processing path, using default resolution: {e}"
                 )
                 current_path = source_dir_path / current_path
 
-            print(f"RESTORE DEBUG: Final current_path: {current_path}")
+            logger.debug(f"RESTORE: Final current_path: {current_path}")
 
         # Check if current path exists
-        print(
-            f"RESTORE DEBUG: Checking current_path: {current_path}, exists: {current_path.exists()}"
+        logger.debug(
+            f"RESTORE: Checking current_path: {current_path}, exists: {current_path.exists()}"
         )
         if not current_path.exists():
             skip_reason = f"Source file does not exist: {current_path}"
-            print(f"RESTORE DEBUG: SKIPPING - {skip_reason}")
+            logger.debug(f"RESTORE: SKIPPING - {skip_reason}")
             result.add_skip(str(current_path), str(original_path), skip_reason)
+
+            # Show status if formatter available
+            if formatter:
+                status_msg = formatter.format_restore_status(
+                    'skip', str(original_path), skip_reason,
+                    current_file_num, total_files
+                )
+                if status_msg:
+                    print(status_msg)
             continue
 
         # Check if original path's parent directory exists
-        print(f"RESTORE DEBUG: Attempting to restore {current_path} to {original_path}")
+        logger.debug(f"RESTORE: Attempting to restore {current_path} to {original_path}")
 
         if not original_path.parent.exists():
             try:
@@ -1393,23 +1425,40 @@ def restore_operation(
                 original_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 logger.error(f"[DEBUG] RESTORE: Error creating parent directory: {e}")
+                error_msg = f"Error creating parent directory: {e}"
                 result.add_failure(
                     str(current_path),
                     str(original_path),
-                    f"Error creating parent directory: {e}",
+                    error_msg,
                 )
+
+                # Show status if formatter available
+                if formatter:
+                    status_msg = formatter.format_restore_status(
+                        'error', str(original_path), error_msg,
+                        current_file_num, total_files
+                    )
+                    if status_msg:
+                        print(status_msg)
                 continue
 
         # Check if original path exists and overwrite is not enabled
-        print(
-            f"RESTORE DEBUG: Checking original_path: {original_path}, exists: {original_path.exists()}, overwrite: {options['overwrite']}"
+        logger.debug(
+            f"RESTORE: Checking original_path: {original_path}, exists: {original_path.exists()}, overwrite: {options['overwrite']}"
         )
         if original_path.exists() and not options["overwrite"]:
-            skip_reason = (
-                f"Destination exists and overwrite not enabled: {original_path}"
-            )
-            print(f"RESTORE DEBUG: SKIPPING - {skip_reason}")
+            skip_reason = "Destination exists (use --force to overwrite)"
+            logger.debug(f"RESTORE: SKIPPING - Destination exists and overwrite not enabled: {original_path}")
             result.add_skip(str(current_path), str(original_path), skip_reason)
+
+            # Show status if formatter available
+            if formatter:
+                status_msg = formatter.format_restore_status(
+                    'skip', str(original_path), skip_reason,
+                    current_file_num, total_files
+                )
+                if status_msg:
+                    print(status_msg)
             continue
 
         # Apply destination override if provided
@@ -1480,6 +1529,15 @@ def restore_operation(
                     str(current_path), str(original_path), current_path.stat().st_size
                 )
 
+                # Show status if formatter available
+                if formatter:
+                    status_msg = formatter.format_restore_status(
+                        'success', str(original_path), None,
+                        current_file_num, total_files
+                    )
+                    if status_msg:
+                        print(status_msg)
+
                 # Verify restoration if enabled
                 if (
                     options["verify"]
@@ -1498,13 +1556,33 @@ def restore_operation(
                     if not verified:
                         logger.warning(f"Verification failed for {original_path}")
             else:
+                error_msg = "Restoration failed"
                 result.add_failure(
-                    str(current_path), str(original_path), "Restoration failed"
+                    str(current_path), str(original_path), error_msg
                 )
+
+                # Show status if formatter available
+                if formatter:
+                    status_msg = formatter.format_restore_status(
+                        'error', str(original_path), error_msg,
+                        current_file_num, total_files
+                    )
+                    if status_msg:
+                        print(status_msg)
 
         except Exception as e:
             logger.error(f"Error restoring {current_path} to {original_path}: {e}")
-            result.add_failure(str(current_path), str(original_path), str(e))
+            error_msg = str(e)
+            result.add_failure(str(current_path), str(original_path), error_msg)
+
+            # Show status if formatter available
+            if formatter:
+                status_msg = formatter.format_restore_status(
+                    'error', str(original_path), error_msg,
+                    current_file_num, total_files
+                )
+                if status_msg:
+                    print(status_msg)
 
     # Update manifest if it came from a file (not from dazzlelinks)
     if not options["dry_run"] and manifest_path and not used_dazzlelinks:
@@ -1515,6 +1593,13 @@ def restore_operation(
 
     # Set manifest in result
     result.set_manifest(manifest)
+
+    # Update formatter counters with final results if formatter available
+    if formatter:
+        formatter.counters['total'] = result.total_count()
+        formatter.counters['success'] = result.success_count()
+        formatter.counters['skip'] = result.skip_count()
+        formatter.counters['error'] = result.failure_count()
 
     return result
 

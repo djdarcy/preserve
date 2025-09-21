@@ -83,11 +83,23 @@ Note: For detailed help on each operation, use: preserve COPY --help
 
 def setup_logging(args):
     """Set up logging based on verbosity level"""
-    log_level = logging.INFO
-    if args.verbose:
-        log_level = logging.DEBUG
-    elif args.quiet:
+    from preserve.utils import get_effective_verbosity
+    from preserve.output import VerbosityLevel
+
+    # Get unified verbosity level
+    verbosity = get_effective_verbosity(args)
+
+    # Map verbosity to logging level
+    if verbosity == VerbosityLevel.QUIET:
+        log_level = logging.ERROR
+    elif verbosity == VerbosityLevel.NORMAL:
         log_level = logging.WARNING
+    elif verbosity == VerbosityLevel.VERBOSE:
+        log_level = logging.INFO
+    elif verbosity >= VerbosityLevel.DETAILED:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
 
     # Get the root logger
     root_logger = logging.getLogger()
@@ -100,7 +112,7 @@ def setup_logging(args):
     console_handler = logging.StreamHandler()
 
     # Use simpler format for normal output, detailed format for verbose
-    if args.verbose:
+    if verbosity >= VerbosityLevel.DETAILED:
         console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     else:
         # Simple format with colors for normal output

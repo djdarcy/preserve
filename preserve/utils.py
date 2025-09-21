@@ -14,6 +14,7 @@ import datetime
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Callable, TextIO
+from preserve.output import VerbosityLevel
 
 # Constants for terminal colors
 COLORS = {
@@ -982,3 +983,38 @@ def _show_directory_help_message(args, logger, src, operation="COPY", is_warning
         log_func(f'  preserve {operation} "{src}" --recursive --rel --includeBase --dst "{example_dst}"')
     else:
         log_func("")
+
+
+def get_effective_verbosity(args) -> int:
+    """
+    Get the effective verbosity level from args.
+
+    This function handles the unified verbosity system where flags can be
+    specified either globally or at the operation level.
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        int: Verbosity level (VerbosityLevel enum value)
+    """
+    # Check for quiet flag first (overrides verbose)
+    if hasattr(args, 'quiet') and args.quiet:
+        return VerbosityLevel.QUIET
+
+    # Check for verbose flag (count gives level)
+    if hasattr(args, 'verbose') and args.verbose:
+        # verbose can be a count (from action='count') or bool (legacy)
+        if isinstance(args.verbose, int):
+            # Map count to verbosity levels
+            if args.verbose >= 3:
+                return VerbosityLevel.DEBUG  # -vvv or more
+            elif args.verbose == 2:
+                return VerbosityLevel.DETAILED  # -vv
+            elif args.verbose == 1:
+                return VerbosityLevel.VERBOSE  # -v
+        elif args.verbose:  # Legacy boolean True
+            return VerbosityLevel.VERBOSE
+
+    # Default to normal verbosity
+    return VerbosityLevel.NORMAL
