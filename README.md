@@ -171,9 +171,9 @@ preserve RESTORE --src "E:/backup" --list
 - **Auto-Migration**: The system automatically handles the transition from single to multiple manifests
 - **Independent Restoration**: Each manifest can be restored independently
 
-## Recommended Workflow for Critical Data
+## Recommended Workflow for Important Data
 
-For critical data, follow this secure multi-step workflow to ensure data integrity:
+For data you really care about, follow this multi-step workflow to ensure end-to-end data integrity:
 
 ### Step 1: Pre-Verification (Create baseline hashes)
 
