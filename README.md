@@ -62,11 +62,11 @@ preserve COPY --glob "*.docx" --srchPath "C:/documents" --recursive --dst "D:/ar
 preserve COPY --loadIncludes "files-to-copy.txt" --dst "E:/backup" --rel
 ```
 
-The `files-to-copy.txt` file should contain one file path per line:
+The `files-to-copy.txt` file should contain one file or directory path per line:
 ```
 C:/data/report.docx
 C:/projects/myapp/src/main.py
-C:/photos/vacation/IMG_001.jpg
+C:/photos/vacation/
 ```
 
 **Verify backup integrity**
