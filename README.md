@@ -13,7 +13,7 @@ Have you ever had a situation where you ran out of space on a hard-drive and nee
 
 Or perhaps you've needed to copy a batch of folders from one machine to multiple lab computers that all shared a similar folder layout, and you got tired of manually copying the folders one-by-one for each box when there are subtle differences (*pro-tip: [Syncthing](https://syncthing.net/) and [BTSync/Resilio](https://www.resilio.com/sync/download/) are handy but not perfect when there are differences to sort out with [Beyond Compare](https://www.scootersoftware.com/download/download)!*). 
 
-Or get frustrated with creating one-off scripts each time files needed to be distributed? 
+Or get frustrated with creating one-off scripts each time files needed to be distributed; and worried whether that critical backup actually copied correctly and all files are intact?? 
 
 Enter `preserve`...
 
