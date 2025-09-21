@@ -6,7 +6,27 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [Unreleased]
 
+## [0.5.2] - 2025-09-21
+
+### Fixed
+- **Subdirectory preservation bug** with `--includeBase` flag (#32) - Files in subdirectories are now correctly preserved with their structure intact
+- **RESTORE --dst functionality** (#30) - The `--dst` flag now properly overrides destination paths during restoration
+- **Help display regression** - Restored user-friendly examples in help output
+
 ### Added
+- **Unified Verbosity System** (#9)
+  - Progressive verbosity levels: quiet, normal, `-v`, `-vv`, `-vvv`
+  - Color-coded output: ✅ success, ❌ errors, ⚠️ warnings, ⊖ skipped
+  - Consistent flags across all operations (COPY, MOVE, VERIFY, RESTORE)
+  - Parent parser pattern ensures flags work in any position
+- **OutputFormatter Class**
+  - Structured output with automatic color detection
+  - Cross-platform color support with graceful fallback
+  - Context-aware message formatting
+- **Test Coverage Improvements**
+  - Comprehensive test suite for path preservation (15 tests)
+  - Test coverage for RESTORE --dst functionality
+  - Test scripts for verbosity system validation
 - Test coverage for `--loadIncludes` functionality
 - End-to-end test for recommended workflow: backup → verify → restore → validate cycle (test_recommended_workflow.py)
 - Detailed `--loadIncludes` file format documentation in README
@@ -18,9 +38,8 @@ All notable changes to this project will be documented in this file. This projec
 - Clear documentation about `--recursive` flag requirement for directories
 - Enhanced Recommended Workflow section with runnable commands for each step
 - Better explanation of verification and restoration process
-
-### Known Issues
-- RESTORE --dst flag does not override destination path (#30)
+- Unified argument parsing with parent parser pattern
+- Improved logging configuration based on effective verbosity
 
 ## [0.5.1] - 2025-09-20
 
