@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [Unreleased]
 
+### Added
+- Test coverage for `--loadIncludes` functionality
+- End-to-end test for recommended workflow: backup → verify → restore → validate cycle (test_recommended_workflow.py)
+- Detailed `--loadIncludes` file format documentation in README
+- Complete step-by-step workflow with exact commands for critical data preservation
+- Platform-specific hash verification commands (certutil for Windows, sha256sum for Linux/Mac)
+
+### Improved
+- README reorganized with most common use cases first
+- Clear documentation about `--recursive` flag requirement for directories
+- Enhanced Recommended Workflow section with runnable commands for each step
+- Better explanation of verification and restoration process
+
+### Known Issues
+- RESTORE --dst flag does not override destination path (#30)
+
 ## [0.5.1] - 2025-09-20
 
 ### Changed

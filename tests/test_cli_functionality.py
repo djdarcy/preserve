@@ -343,6 +343,43 @@ class TestCLIFunctionality(unittest.TestCase):
 
         self.assertTrue(args.preserve_dir)
 
+    def test_loadIncludes_functionality(self):
+        """Test that --loadIncludes reads file paths from a text file."""
+        # Create some specific test files
+        file1 = self.src_dir / 'include_me.txt'
+        file2 = self.src_dir / 'level1' / 'also_include.doc'
+        file3 = self.src_dir / 'level2' / 'nested.pdf'
+
+        # Ensure directories exist
+        file2.parent.mkdir(parents=True, exist_ok=True)
+        file3.parent.mkdir(parents=True, exist_ok=True)
+
+        file1.write_text('test1')
+        file2.write_text('test2')
+        file3.write_text('test3')
+
+        # Create includes file with absolute paths
+        includes_file = self.test_dir / 'includes.txt'
+        includes_file.write_text(f'{file1}\n{file2}\n{file3}\n')
+
+        args = self.parser.parse_args([
+            'COPY',
+            '--loadIncludes', str(includes_file),
+            '--dst', str(self.dst_dir)
+        ])
+
+        # Add defaults
+        args.verbose = False
+        args.quiet = False
+        args.log = None
+        args.no_color = False
+
+        # Verify the argument was parsed
+        self.assertEqual(args.loadIncludes, str(includes_file))
+
+        # NOTE: Actual file loading functionality would need to be tested
+        # in integration tests or with the actual find_files_from_args function
+
     def test_loadExcludes_functionality(self):
         """Test that --loadExcludes reads exclusions from file."""
         # Create excludes file

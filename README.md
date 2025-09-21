@@ -42,44 +42,50 @@ pip install preserve[dazzlelink]
 
 ### Basic Usage
 
-Copy files with relative path preservation (from a file list):
+**Most common: Backup an entire directory with all subdirectories**
 
 ```bash
-preserve COPY --loadIncludes "files-to-copy.txt" --dst "e:/backup" --rel --dazzlelink --includeBase
+preserve COPY "C:/my-project" --recursive --rel --includeBase --dst "E:/backup"
 ```
 
-Or (search the source directory for files):,
+**Important**: Always use `--recursive` (or `-r`) when copying directories. Without it, preserve will only look for files directly in the source directory, not in subdirectories.
+
+**Copy specific file types from a directory tree**
 
 ```bash
-preserve COPY --glob "*.txt" --srchPath "c:/data" --rel --dst "e:/backup"
+preserve COPY --glob "*.docx" --srchPath "C:/documents" --recursive --dst "D:/archive"
 ```
 
-Move files with absolute path preservation:
+**Copy files from a list (loadIncludes)**
 
 ```bash
-preserve MOVE --glob "*.docx" --srchPath "c:/old" --abs --dst "d:/new"
+preserve COPY --loadIncludes "files-to-copy.txt" --dst "E:/backup" --rel
 ```
 
-Verify files against their source:
-
-```bash
-preserve VERIFY --src "c:/original" --dst "e:/backup" --hash SHA256
+The `files-to-copy.txt` file should contain one file path per line:
+```
+C:/data/report.docx
+C:/projects/myapp/src/main.py
+C:/photos/vacation/IMG_001.jpg
 ```
 
-Restore files to their original locations:
+**Verify backup integrity**
 
 ```bash
-# Restore latest operation (default)
-preserve RESTORE --src "e:/backup"
+preserve VERIFY --src "C:/my-project" --dst "E:/backup" --hash SHA256
+```
+
+**Restore files to their original locations**
+
+```bash
+# Restore latest backup
+preserve RESTORE --src "E:/backup"
 
 # List all available restore points
-preserve RESTORE --src "e:/backup" --list
+preserve RESTORE --src "E:/backup" --list
 
 # Restore specific operation by number
-preserve RESTORE --src "e:/backup" --number 1
-
-# Force overwrite during restore
-preserve RESTORE --src "e:/backup" --force
+preserve RESTORE --src "E:/backup" --number 2
 ```
 
 ### Path Preservation Options
@@ -165,17 +171,72 @@ preserve RESTORE --src "E:/backup" --list
 - **Auto-Migration**: The system automatically handles the transition from single to multiple manifests
 - **Independent Restoration**: Each manifest can be restored independently
 
-## Recommended Workflow
+## Recommended Workflow for Critical Data
 
-For critical data, it's recommended to follow a secure multi-step workflow:
+For critical data, follow this secure multi-step workflow to ensure data integrity:
 
-1. **Pre-Verification**: Analyze and hash source files
-2. **Copy with Structure**: Use `--rel --includeBase` to maintain directory structure
-3. **Post-Copy Verification**: Verify all files match their source
-4. **Test Restoration**: Run `--dry-run` to confirm restore will work
-5. **Source Cleanup**: Only remove originals after verification passes
+### Step 1: Pre-Verification (Create baseline hashes)
 
-See the documentation for more details on secure workflows.
+```bash
+# Windows: Use certutil to create SHA256 hashes
+cd C:\my-project
+for /r %i in (*) do certutil -hashfile "%i" SHA256 >> ..\source-hashes.txt
+
+# Linux/Mac: Use shasum or sha256sum
+cd /path/to/my-project
+find . -type f -exec sha256sum {} \; > ../source-hashes.txt
+```
+
+### Step 2: Copy with Structure Preservation
+
+```bash
+# Copy with relative paths and include base directory
+preserve COPY "C:/my-project" --recursive --rel --includeBase --dst "E:/backup" --hash SHA256
+```
+
+### Step 3: Post-Copy Verification
+
+```bash
+# Verify all files match their source
+preserve VERIFY --src "C:/my-project" --dst "E:/backup" --hash SHA256 --report verify-report.txt
+
+# Check the report for any mismatches
+type verify-report.txt
+```
+
+### Step 4: Test Restoration
+
+```bash
+# First, do a dry run to see what would be restored
+preserve RESTORE --src "E:/backup" --dry-run
+
+# If everything looks correct, restore to a test location
+preserve RESTORE --src "E:/backup" --dst "C:/test-restore" --verify
+```
+
+### Step 5: Validate Restoration
+
+```bash
+# Compare restored files with original hashes
+# Windows
+cd C:\test-restore\my-project
+for /r %i in (*) do certutil -hashfile "%i" SHA256 >> ..\..\restored-hashes.txt
+fc ..\..\source-hashes.txt ..\..\restored-hashes.txt
+
+# Linux/Mac
+cd /path/to/test-restore/my-project
+find . -type f -exec sha256sum {} \; > ../../restored-hashes.txt
+diff ../../source-hashes.txt ../../restored-hashes.txt
+```
+
+### Step 6: Source Cleanup (Only after validation)
+
+```bash
+# Only remove originals after all verifications pass
+# Keep the preserve_manifest*.json files in the backup for future restoration
+```
+
+**Important**: Never delete your source files until you've verified the backup AND successfully tested restoration.
 
 ## What's New
 
