@@ -146,7 +146,8 @@ def handle_restore_operation(args, logger):
         'hash_algorithm': hash_algorithms[0],
         'dry_run': args.dry_run if hasattr(args, 'dry_run') else False,
         'force': args.force if hasattr(args, 'force') else False,
-        'use_dazzlelinks': use_dazzlelinks
+        'use_dazzlelinks': use_dazzlelinks,
+        'destination_override': args.dst if hasattr(args, 'dst') and args.dst else None
     }
 
     logger.debug(f"[DEBUG] RESTORE options: {options}")

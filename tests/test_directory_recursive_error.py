@@ -2,7 +2,6 @@
 Test cases for directory operations and error messages when --recursive is not specified.
 """
 
-import pytest
 import os
 import sys
 import shutil
@@ -247,4 +246,4 @@ class TestDirectoryRecursiveError(unittest.TestCase):
 
 if __name__ == '__main__':
     # Run the tests
-    pytest.main([__file__, '-v'])
+    unittest.main()

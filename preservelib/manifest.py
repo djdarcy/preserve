@@ -12,6 +12,8 @@ import hashlib
 import datetime
 import platform
 import logging
+import socket
+import uuid
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Set, Tuple
 
@@ -32,16 +34,17 @@ class PreserveManifest:
     def __init__(self, manifest_path: Optional[Union[str, Path]] = None):
         """
         Initialize a new or existing manifest.
-        
+
         Args:
             manifest_path: Path to an existing manifest file to load (optional)
         """
         # Default manifest structure
         self.manifest = {
-            "manifest_version": 1,
+            "manifest_version": 2,
             "created_at": datetime.datetime.now().isoformat(),
             "updated_at": datetime.datetime.now().isoformat(),
             "platform": self._get_platform_info(),
+            "host_info": self._get_host_info(),
             "operations": [],
             "files": {},
             "metadata": {}
@@ -54,7 +57,7 @@ class PreserveManifest:
     def _get_platform_info(self) -> Dict[str, str]:
         """
         Get information about the current platform.
-        
+
         Returns:
             Dictionary with platform information
         """
@@ -66,6 +69,190 @@ class PreserveManifest:
             "processor": platform.processor(),
             "python_version": platform.python_version()
         }
+
+    def _get_host_info(self) -> Dict[str, Any]:
+        """
+        Get comprehensive information about the host machine.
+
+        Returns:
+            Dictionary with host information including hostname, FQDN, MAC address, etc.
+        """
+        host_info = {}
+
+        try:
+            # Basic hostname information
+            host_info["hostname"] = socket.gethostname()
+            host_info["fqdn"] = socket.getfqdn()
+
+            # IP addresses
+            try:
+                host_info["ip_addresses"] = []
+                # Get all IP addresses
+                hostname = socket.gethostname()
+                for info in socket.getaddrinfo(hostname, None):
+                    ip = info[4][0]
+                    if ip not in host_info["ip_addresses"]:
+                        host_info["ip_addresses"].append(ip)
+            except:
+                host_info["ip_addresses"] = []
+
+            # MAC address (as a stable machine identifier)
+            try:
+                mac_num = uuid.getnode()
+                mac = ':'.join(('%012X' % mac_num)[i:i+2] for i in range(0, 12, 2))
+                host_info["mac_address"] = mac
+                host_info["mac_address_int"] = mac_num
+            except:
+                host_info["mac_address"] = None
+                host_info["mac_address_int"] = None
+
+            # Machine-specific ID
+            host_info["machine_id"] = self._get_machine_id()
+
+            # Check if running in container or VM
+            host_info["is_container"] = self._detect_container()
+            host_info["is_vm"] = self._detect_vm()
+
+        except Exception as e:
+            logger.warning(f"Error collecting host info: {e}")
+            # Return minimal info on error
+            host_info = {
+                "hostname": "unknown",
+                "error": str(e)
+            }
+
+        return host_info
+
+    def _get_machine_id(self) -> Optional[str]:
+        """
+        Get a stable machine identifier that persists across reboots.
+
+        Returns:
+            Machine ID string or None if not available
+        """
+        try:
+            if platform.system() == 'Windows':
+                # On Windows, try to get the MachineGuid from registry
+                try:
+                    import winreg
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                       r"SOFTWARE\Microsoft\Cryptography") as key:
+                        return winreg.QueryValueEx(key, "MachineGuid")[0]
+                except:
+                    pass
+            elif platform.system() == 'Linux':
+                # On Linux, try to read machine-id
+                machine_id_paths = [
+                    '/etc/machine-id',
+                    '/var/lib/dbus/machine-id'
+                ]
+                for path in machine_id_paths:
+                    try:
+                        with open(path, 'r') as f:
+                            return f.read().strip()
+                    except:
+                        continue
+            elif platform.system() == 'Darwin':  # macOS
+                # On macOS, use system profiler
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['system_profiler', 'SPHardwareDataType'],
+                        capture_output=True, text=True
+                    )
+                    for line in result.stdout.split('\n'):
+                        if 'Hardware UUID' in line:
+                            return line.split(':')[1].strip()
+                except:
+                    pass
+        except Exception as e:
+            logger.debug(f"Could not get machine ID: {e}")
+
+        # Fallback to MAC address as machine ID
+        try:
+            return str(uuid.getnode())
+        except:
+            return None
+
+    def _detect_container(self) -> bool:
+        """
+        Detect if running inside a container.
+
+        Returns:
+            True if running in a container, False otherwise
+        """
+        try:
+            # Check for Docker
+            if os.path.exists('/.dockerenv'):
+                return True
+
+            # Check for Kubernetes
+            if os.path.exists('/var/run/secrets/kubernetes.io'):
+                return True
+
+            # Check cgroup for docker/lxc/etc
+            if os.path.exists('/proc/1/cgroup'):
+                with open('/proc/1/cgroup', 'r') as f:
+                    content = f.read()
+                    if any(x in content for x in ['docker', 'lxc', 'containerd', 'kubepods']):
+                        return True
+        except:
+            pass
+
+        return False
+
+    def _detect_vm(self) -> bool:
+        """
+        Detect if running inside a virtual machine.
+
+        Returns:
+            True if running in a VM, False otherwise
+        """
+        try:
+            system = platform.system()
+
+            if system == 'Linux':
+                # Check for common VM indicators
+                try:
+                    import subprocess
+                    result = subprocess.run(['systemd-detect-virt'],
+                                          capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip() != 'none':
+                        return True
+                except:
+                    pass
+
+                # Check DMI info
+                dmi_paths = ['/sys/class/dmi/id/product_name',
+                           '/sys/class/dmi/id/sys_vendor']
+                vm_indicators = ['VirtualBox', 'VMware', 'QEMU', 'Xen', 'Hyper-V',
+                                'KVM', 'Parallels', 'Virtual Machine']
+
+                for path in dmi_paths:
+                    try:
+                        with open(path, 'r') as f:
+                            content = f.read().strip()
+                            if any(ind in content for ind in vm_indicators):
+                                return True
+                    except:
+                        pass
+
+            elif system == 'Windows':
+                # Check for VM-specific registry keys or WMI
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['wmic', 'computersystem', 'get', 'model'],
+                        capture_output=True, text=True
+                    )
+                    if any(x in result.stdout for x in ['VirtualBox', 'VMware', 'Virtual']):
+                        return True
+                except:
+                    pass
+        except:
+            pass
+
+        return False
     
     def load(self, path: Union[str, Path]) -> bool:
         """
@@ -87,10 +274,18 @@ class PreserveManifest:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # Validate manifest version
-            if "manifest_version" not in data or data["manifest_version"] != 1:
-                logger.warning(f"Unsupported manifest version: {data.get('manifest_version')}")
+            # Validate manifest version (support both v1 and v2)
+            manifest_version = data.get("manifest_version", 1)
+            if manifest_version not in [1, 2]:
+                logger.warning(f"Unsupported manifest version: {manifest_version}")
                 return False
+
+            # If loading a v1 manifest, add empty host_info for compatibility
+            if manifest_version == 1:
+                data["host_info"] = {
+                    "hostname": "unknown (v1 manifest)",
+                    "note": "Manifest created before host tracking was added"
+                }
             
             # Update manifest with loaded data
             self.manifest = data
@@ -468,9 +663,10 @@ class PreserveManifest:
             if key not in self.manifest:
                 errors.append(f"Missing required key: {key}")
         
-        # Check manifest version
-        if self.manifest.get("manifest_version") != 1:
-            errors.append(f"Unsupported manifest version: {self.manifest.get('manifest_version')}")
+        # Check manifest version (support both v1 and v2)
+        manifest_version = self.manifest.get("manifest_version")
+        if manifest_version not in [1, 2]:
+            errors.append(f"Unsupported manifest version: {manifest_version}")
         
         # Validate operations
         for i, operation in enumerate(self.manifest.get("operations", [])):

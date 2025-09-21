@@ -214,6 +214,47 @@ preserve RESTORE --src "E:/backup" --dry-run
 preserve RESTORE --src "E:/backup" --dst "C:/test-restore" --verify
 ```
 
+#### Understanding RESTORE --dst Behavior
+
+When using `--dst` to restore to a different location, **preserve maintains the backup's directory structure**, not the original source structure. This respects the path style choice (`--rel`, `--abs`, `--flat`) made during backup creation.
+
+**Examples:**
+
+1. **Relative with Base Directory** (`--rel --includeBase`):
+   ```bash
+   # Backup created with:
+   preserve COPY my-project/ --dst backup/ --rel --includeBase
+   # Creates: backup/my-project/file.txt
+
+   # Restore to new location:
+   preserve RESTORE --src backup/ --dst restored/
+   # Result: restored/my-project/file.txt
+   ```
+
+2. **Flat Structure** (`--flat`):
+   ```bash
+   # Backup created with:
+   preserve COPY my-project/ --dst backup/ --flat
+   # Creates: backup/file.txt (no subdirectories)
+
+   # Restore to new location:
+   preserve RESTORE --src backup/ --dst restored/
+   # Result: restored/file.txt (maintains flat structure)
+   ```
+
+3. **Absolute Paths** (`--abs`):
+   ```bash
+   # Backup created with:
+   preserve COPY C:/data/file.txt --dst backup/ --abs
+   # Creates: backup/C/data/file.txt
+
+   # Restore to new location:
+   preserve RESTORE --src backup/ --dst restored/
+   # Result: restored/C/data/file.txt (preserves full path structure)
+   ```
+
+**Key Point**: The restored structure mirrors what's in your backup directory, preserving your original backup organization choice.
+
 ### Step 5: Validate Restoration
 
 ```bash

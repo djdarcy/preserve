@@ -1146,6 +1146,7 @@ def restore_operation(
         "dry_run": False,
         "force": False,  # Force restoration even if verification fails
         "use_dazzlelinks": True,  # Use dazzlelinks if no manifest found
+        "destination_override": None,  # Override destination path for restoration
     }
 
     # Merge with provided options
@@ -1406,6 +1407,51 @@ def restore_operation(
             print(f"RESTORE DEBUG: SKIPPING - {skip_reason}")
             result.add_skip(str(current_path), str(original_path), skip_reason)
             continue
+
+        # Apply destination override if provided
+        if options.get("destination_override"):
+            destination_override = Path(options["destination_override"])
+
+            # IMPORTANT: RESTORE --dst preserves the backup's directory structure,
+            # not the original source structure. This respects the user's path style
+            # choice (--rel, --abs, --flat) made during backup creation.
+            #
+            # Examples:
+            # 1. Backed up with: COPY source/ --dst backup/ --rel --includeBase
+            #    Backup contains: backup/source/file.txt
+            #    RESTORE --src backup/ --dst new/
+            #    Result: new/source/file.txt (preserves "source/" from backup)
+            #
+            # 2. Backed up with: COPY source/ --dst backup/ --flat
+            #    Backup contains: backup/file.txt
+            #    RESTORE --src backup/ --dst new/
+            #    Result: new/file.txt (no subdirectories, as backed up)
+            #
+            # 3. Backed up with: COPY C:/data/file.txt --dst backup/ --abs
+            #    Backup contains: backup/C/data/file.txt
+            #    RESTORE --src backup/ --dst new/
+            #    Result: new/C/data/file.txt (preserves full absolute structure)
+
+            dest_orig_path = Path(str(dest_orig_path).replace("\\", "/"))
+            source_orig_path_clean = Path(str(source_orig_path).replace("\\", "/"))
+
+            try:
+                # Find the relative path from the backup source to the backed up file
+                backup_source = source_dir_path  # This is the --src directory for restore
+
+                if dest_orig_path.is_relative_to(backup_source):
+                    # Get the relative path within the backup directory
+                    # This preserves the exact structure as stored in the backup
+                    relative_backup_path = dest_orig_path.relative_to(backup_source)
+                    # Apply the same relative structure to the destination override
+                    original_path = destination_override / relative_backup_path
+                else:
+                    # Fallback: preserve the filename only
+                    original_path = destination_override / original_path.name
+
+            except (ValueError, OSError) as e:
+                # Final fallback: just use destination override + filename
+                original_path = destination_override / original_path.name
 
         # In dry run mode, just log what would be done
         if options["dry_run"]:

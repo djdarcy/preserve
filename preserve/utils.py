@@ -818,7 +818,7 @@ def get_path_style(args):
     elif hasattr(args, 'flat') and args.flat:
         return 'flat'
     else:
-        return 'absolute'  # Default to absolute for better preservation
+        return 'relative'  # Default to relative for cleaner, more portable backups
 
 
 def get_preserve_dir(args, dest_path):
