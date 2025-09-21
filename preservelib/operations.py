@@ -547,12 +547,16 @@ def copy_operation(
                             )
 
                             if options["include_base"]:
-                                # Include the base directory name
-                                base_parent = Path(options["source_base"]).parent
+                                # Include the base directory name (last component of source_base)
+                                # To include the base name, we need to get relative path from parent
+                                source_base_path = Path(options["source_base"])
+                                base_parent = source_base_path.parent
                                 logger.debug(
                                     f"[DEBUG PATH] Using base parent with include_base: {base_parent}"
                                 )
 
+                                # Get relative path from parent of source_base
+                                # This will include the source_base name in the relative path
                                 rel_path = try_relative_to(base_parent)
                                 if rel_path:
                                     dest_path = dest_base_path / rel_path

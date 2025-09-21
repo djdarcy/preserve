@@ -210,11 +210,23 @@ def handle_copy_operation(args, logger):
     # Get hash algorithms
     hash_algorithms = get_hash_algorithms(args)
 
+    # Determine source_base for directory operations
+    # If copying a directory with -r, use that directory as source_base
+    source_base = None
+    if args.srchPath:
+        source_base = args.srchPath[0]
+    elif args.sources and len(args.sources) == 1:
+        # Single source specified
+        src_path = Path(args.sources[0])
+        if src_path.is_dir() and args.recursive:
+            # Copying a directory recursively - use it as source_base
+            source_base = str(src_path)
+
     # Prepare operation options
     options = {
         'path_style': path_style,
         'include_base': include_base,
-        'source_base': args.srchPath[0] if args.srchPath else None,
+        'source_base': source_base,
         'overwrite': args.overwrite if hasattr(args, 'overwrite') else False,
         'preserve_attrs': not args.no_preserve_attrs if hasattr(args, 'no_preserve_attrs') else True,
         'verify': not args.no_verify if hasattr(args, 'no_verify') else True,
