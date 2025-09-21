@@ -7,7 +7,7 @@
 
 A cross-platform file preservation tool with path normalization, verification, and restoration capabilities.
 
-# Why another backup tool?
+## Why another backup tool?
 
 Have you ever had a situation where you ran out of space on a hard-drive and needed to robocopy / move an assortment of adhoc folders and files from one drive to another, but you needed an easy way to map those files back to the original source directory later? 
 
