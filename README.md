@@ -11,9 +11,9 @@ A cross-platform file preservation tool with path normalization, verification, a
 
 Have you ever had a situation where you ran out of space on a hard-drive and needed to [robocopy](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy) / [rsync](https://rsync.samba.org/) / [move](https://www.gnu.org/software/coreutils/manual/html_node/mv-invocation.html#mv-invocation) an assortment of adhoc folders and files from one drive to another, but you needed an easy way to map those files back to the original source directory later? 
 
-Or perhaps you've needed to copy a batch of folders from one machine to multiple lab computers that all shared a similar folder layout, and you got tired of manually copying the folders one-by-one for each box when there are subtle differences (*pro-tip: [Syncthing](https://syncthing.net/) and [BTSync/Resilio](https://www.resilio.com/sync/download/) are handy but not perfect when there are differences to sort out with [Beyond Compare](https://www.scootersoftware.com/download/download)!*). 
+Or perhaps you've needed to copy a batch of folders from one machine to multiple lab computers that all shared a similar folder layout, and you got tired of manually copying the folders one-by-one for each box when there are subtle differences (*pro-tip: [Syncthing](https://syncthing.net/) and [BTSync/Resilio](https://www.resilio.com/sync/download/) are handy but not perfect when there are differences to sort out with [Beyond Compare](https://www.scootersoftware.com/download/download)*). 
 
-Or get frustrated with creating one-off scripts each time files needed to be distributed; and worried whether that critical copy actually copied correctly and all files are intact?? 
+Or get frustrated with creating one-off scripts each time files needed to be distributed; and worried whether that copy actually transferred correctly and all files are intact?
 
 Enter `preserve`...
 
